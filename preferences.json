@@ -1,15 +1,23 @@
 [
   {
+    "type": "separator",
+    "label": "Toolbar buttons"
+  },
+  {
     "property": "zen-tabs-organiser.enable_sort",
-    "label": "Sort button",
+    "label": "Show the **Sort** button",
     "type": "checkbox",
     "defaultValue": true
   },
   {
     "property": "zen-tabs-organiser.enable_clear",
-    "label": "Clear button",
+    "label": "Show the **Clear** button",
     "type": "checkbox",
     "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Groups"
   },
   {
     "property": "zen-tabs-organiser.auto_colors",
@@ -19,17 +27,30 @@
   },
   {
     "property": "zen-tabs-organiser.auto_icons",
-    "label": "Auto-assign icons to groups",
+    "label": "Auto-assign icons to groups\n*Requires the Advanced Tab Groups mod*",
     "type": "checkbox",
     "defaultValue": true
+  },
+  {
+    "property": "zen-tabs-organiser.min_group_size",
+    "label": "Minimum tabs per group",
+    "type": "string",
+    "value": "num",
+    "defaultValue": 2,
+    "placeholder": "2"
+  },
+  {
+    "type": "separator",
+    "label": "AI grouping"
   },
   {
     "property": "zen-tabs-organiser.ai_model",
     "label": "AI Provider",
     "type": "dropdown",
     "defaultValue": "0",
+    "placeholder": false,
     "options": [
-      { "value": "0", "label": "None" },
+      { "value": "0", "label": "None (group by domain)" },
       { "value": "1", "label": "Gemini" },
       { "value": "2", "label": "Ollama" },
       { "value": "3", "label": "Mistral" },

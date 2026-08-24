@@ -1,0 +1,39 @@
+{
+  "id": "zen-tabs-organiser",
+  "name": "Zen Tabs Organiser",
+  "description": "Sort tabs into groups using AI or domain. Auto-colors, auto-icons, clear ungrouped tabs.",
+  "author": "Alexis",
+  "version": "3.0.0",
+  "homepage": "https://github.com/alexiscrocilla/Zen-Tabs-Organiser",
+  "readme": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/README.md",
+  "image": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/Screenshot.png",
+  "style": {
+    "chrome": "chrome.css"
+  },
+  "preferences": "preferences.json",
+  "scripts": {
+    "zen-tabs-organiser.uc.js": {
+      "name": "Zen Tabs Organiser",
+      "description": "Sort & Clear buttons, tab grouping, auto-colors and auto-icons.",
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
+    }
+  },
+  "supportsUnload": true,
+  "ai": "yes",
+  "tags": [
+    "tabs",
+    "productivity",
+    "tab-groups",
+    "ai",
+    "tidy",
+    "sort",
+    "clear"
+  ],
+  "createdAt": "2026-03-25",
+  "updatedAt": "2026-08-24T19:30:00Z",
+  "fork": [
+    "zen"
+  ]
+}

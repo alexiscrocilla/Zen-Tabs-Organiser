@@ -1,0 +1,467 @@
+/* ==== Zen Tabs Organiser — Sine mod for Zen 1.21+ ==== */
+/* Declared as `style.chrome` in theme.json; Sine @imports it into its
+   sine-mods/chrome.css bundle and loads it as a user sheet. */
+
+/* ================================================================
+   HOW GROUP APPEARANCE IS DIVIDED
+
+   Advanced Tab Groups and this mod both want to style tab groups,
+   and both load as Sine user sheets — so whichever loads last wins
+   every tie. Restyling groups unconditionally meant this mod made
+   ATG look worse; removing the styling altogether left plain,
+   characterless groups when ATG is off.
+
+   So the group design below is gated on whether ATG is running.
+   The script sets `zen-tabs-organiser.atg_active` from
+   `globalThis.advancedTabGroups`, and the whole block is behind a
+   `@media not (-moz-bool-pref: ...)` query. ATG on: ATG owns the
+   look. ATG off: this mod styles groups itself, and depends on
+   nothing ATG builds. The pref persists, so there is no flash of
+   the wrong style after the first run.
+
+   Two rules for anything added later:
+   - Anchor on `tab-group:not([split-view-group])` with child
+     combinators. Zen nests groups, folders and split views inside
+     one another, and a descendant selector leaks into all of them.
+   - Never match <zen-folder>. Zen lays it out and animates it in
+     ZenFolders.animateCollapse(), and a user sheet's !important
+     outranks both inline styles and the Web Animations API — an
+     over-broad rule disables Zen's animations rather than restyling
+     them.
+   ================================================================ */
+
+:root {
+  /* The built-in CSS easings are too weak to read as intentional. */
+  --zto-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --zto-enter: 200ms;
+  --zto-exit: 160ms;
+}
+
+/* ================================================================
+   COLLAPSE FALLBACK
+
+   Firefox 154 hides the tabs of a collapsed group with
+
+     #tabbrowser-tabs[orient="vertical"] tab-group[collapsed]
+       > .tabbrowser-tab:not([visuallyselected], [multiselected])
+     { display: none }
+
+   That is a CHILD combinator, and Zen's tabgroup patch replaces the
+   group's <html:slot/> with <div class="tab-group-container">, so
+   the tabs are grandchildren and the native rule never matches. Zen
+   only animates its own folders — ZenFolders.on_TabGroupCollapse()
+   returns early on `!group.isZenFolder`.
+
+   So a plain tab group has nothing hiding its tabs unless a mod
+   supplies it. ATG does; this is the same rule, kept so the mod
+   still collapses if ATG is disabled. The active tab stays visible,
+   matching both the native rule and ATG.
+
+   The expanded baseline is gated behind :not([collapsed]) on
+   purpose: an unconditional `max-height/opacity !important` on tabs
+   would also beat Zen's own animations.
+   ================================================================ */
+
+tab-group:not([split-view-group]):not([collapsed]) > .tab-group-container > tab {
+  max-height: 100px !important;
+  opacity: 1 !important;
+}
+
+tab-group:not([split-view-group]) > .tab-group-container > tab {
+  transition:
+    max-height var(--zto-enter) var(--zto-ease-out),
+    opacity var(--zto-enter) var(--zto-ease-out),
+    transform var(--zto-enter) var(--zto-ease-out) !important;
+}
+
+/* Short stagger, so the group reads as one motion rather than a queue.
+   Four steps of 20ms keeps the whole collapse under 250ms. */
+tab-group:not([split-view-group]) > .tab-group-container > tab:nth-child(2) { transition-delay: 20ms !important; }
+tab-group:not([split-view-group]) > .tab-group-container > tab:nth-child(3) { transition-delay: 40ms !important; }
+tab-group:not([split-view-group]) > .tab-group-container > tab:nth-child(4) { transition-delay: 60ms !important; }
+tab-group:not([split-view-group]) > .tab-group-container > tab:nth-child(n+5) { transition-delay: 80ms !important; }
+
+/* Exit is quicker than enter: the user has already decided. */
+tab-group:not([split-view-group])[collapsed] > .tab-group-container > tab:not([selected], [visuallyselected], [multiselected]) {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  transform: translateY(-4px) !important;
+  padding-block: 0 !important;
+  margin-block: 0 !important;
+  overflow: hidden !important;
+  transition-duration: var(--zto-exit) !important;
+}
+
+tab-group:not([split-view-group])[collapsed] > .tab-group-container > tab-split-view-wrapper:not([hasactivetab]) {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+}
+
+tab-group:not([split-view-group]) > .tab-group-container {
+  overflow: hidden !important;
+}
+
+
+/* ================================================================
+   The collapsed-group chip — neutralised whether or not ATG is on.
+
+   Firefox 154 draws the label of a collapsed group as a chip:
+
+     tab-group[collapsed] > .tab-group-label-container & {
+       background-color: var(--tab-group-color-invert);
+       outline: 1px solid light-dark(var(--tab-group-color), ...);
+       outline-offset: -1px;
+     }
+
+   That outline is invisible until --tab-group-color actually resolves,
+   which only happens because this mod sets it — so this mod owns the
+   consequence. It reads as a stray square around the group name, and
+   neither this design nor ATG's wants it.
+   ================================================================ */
+tab-group:not([split-view-group])[collapsed] > .tab-group-label-container .tab-group-label {
+  outline: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--zto-label-text, var(--tab-selected-textcolor, inherit)) !important;
+}
+
+/* ================================================================
+   GROUP DESIGN — applied only while Advanced Tab Groups is off.
+
+   Advanced Tab Groups is optional and is NOT installed by this mod.
+   When it happens to be running it owns the look, so this whole
+   block steps aside; on its own, this mod styles groups itself and
+   uses no variable and no element that ATG creates.
+
+   All of the colour is derived from --tab-group-color, which the
+   script sets on the element. The five values below are the only
+   knobs: change them here rather than in the rules underneath.
+
+   Everything here is paint, never geometry. No border, no margin or
+   padding override: the group keeps exactly the box Zen gives it,
+   so grouped tabs stay aligned with loose ones. The rail is a
+   background gradient rather than a border-inline-start, because a
+   border pushes the content sideways and the group visibly shifts.
+   ================================================================ */
+@media not (-moz-bool-pref: "zen-tabs-organiser.atg_active") {
+
+  tab-group:not([split-view-group]) {
+    /* Header reads a shade stronger than the body, so the group has a
+       head and a tail rather than being one flat slab. */
+    --zto-header-tint: color-mix(in srgb, var(--tab-group-color, gray) 20%, transparent);
+    --zto-body-tint: color-mix(in srgb, var(--tab-group-color, gray) 10%, transparent);
+    --zto-hover-tint: color-mix(in srgb, var(--tab-group-color, gray) 30%, transparent);
+    --zto-rail: color-mix(in srgb, var(--tab-group-color, gray) 75%, transparent);
+
+    /* Text is the group's colour pulled most of the way to the normal
+       tab text colour: tinted enough to belong, contrasted enough to
+       read, and it follows a light theme without a second rule. */
+    --zto-label-text: color-mix(in srgb, var(--tab-group-color, gray) 25%,
+                                var(--tab-selected-textcolor, currentColor));
+
+    /* Rail drawn in the background layer: costs no horizontal space. */
+    --zto-rail-image: linear-gradient(to right, var(--zto-rail) 0 3px, transparent 3px);
+  }
+
+  /* --- Header --- */
+  tab-group:not([split-view-group]) > .tab-group-label-container {
+    /* Zen declares this as a <vbox>, which stacks vertically. Without this
+       the injected icon lands above the title instead of beside it. */
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    background-color: var(--zto-header-tint) !important;
+    background-image: var(--zto-rail-image) !important;
+    background-repeat: no-repeat !important;
+    border-radius: var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) 0 0 !important;
+    transition:
+      background-color var(--zto-enter) var(--zto-ease-out),
+      border-radius var(--zto-enter) var(--zto-ease-out) !important;
+    animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) backwards;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    tab-group:not([split-view-group]) > .tab-group-label-container:hover {
+      background-color: var(--zto-hover-tint) !important;
+    }
+  }
+
+  tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label {
+    background: transparent !important;
+    color: var(--zto-label-text) !important;
+    font-weight: 600 !important;
+    margin-inline-end: auto !important;
+    min-width: 0 !important;
+    /* The gap before the title is owned by the icon's margin, so the title
+       lands where tab titles do whatever --tab-group-label-padding is. */
+    padding-inline-start: 0 !important;
+  }
+
+  /* --- Body: the tint continues, lighter, under the tabs --- */
+  tab-group:not([split-view-group]) > .tab-group-container {
+    background-color: var(--zto-body-tint) !important;
+    background-image: var(--zto-rail-image) !important;
+    background-repeat: no-repeat !important;
+    border-radius: 0 0 var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) !important;
+    transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
+    animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) 60ms backwards;
+  }
+
+  /* Closed: the header becomes a standalone pill. */
+  tab-group:not([split-view-group])[collapsed] > .tab-group-label-container {
+    border-radius: var(--border-radius-medium, 6px) !important;
+  }
+
+  tab-group:not([split-view-group])[collapsed] > .tab-group-container {
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+
+  tab-group:not([split-view-group])[collapsed] {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* --- Icon injected by this mod when ATG is not there to do it --- */
+  /* Sized and placed to land exactly where a tab's favicon does, using the
+     same variable Zen uses for tab padding, so it tracks tab density. */
+  .zto-group-icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-inline: var(--tab-inline-padding, 8px) 8px;
+    flex: none;
+  }
+
+  .zto-group-icon {
+    box-sizing: border-box;   /* 16px overall, like a favicon */
+    width: 16px;
+    height: 16px;
+    padding: 3px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--tab-group-color, gray) 85%, transparent);
+    /* Zen's selectable icons paint with context-fill; declare the same set
+       the rest of the browser does or the glyph comes out black. */
+    -moz-context-properties: fill, stroke, fill-opacity;
+    fill: var(--tab-selected-textcolor, #fff);
+    stroke: var(--tab-selected-textcolor, #fff);
+  }
+
+  /* Zen draws its own group line; the rail above replaces it. */
+  tab-group:not([split-view-group]) > .tab-group-line {
+    display: none !important;
+  }
+}
+
+@keyframes zenGroupAppear {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ================================================================
+   .zen-tab-group-start is NOT decoration — do not hide it.
+
+   It is the layout anchor Zen animates to collapse a folder:
+   ZenFolders.animateCollapse() runs
+       createAnimation(groupStart, { marginTop: -collapsedHeight })
+   to pull the tabs up behind the folder header. `display: none`
+   removes the margin box, so the negative margin has no effect and
+   the tabs of a collapsed folder stay on screen. Measured: 116px
+   instead of 0px. A previous version of this file hid it globally,
+   which broke collapsing for every folder in the browser.
+   ================================================================ */
+
+/* ================================================================
+   SORT & CLEAR BUTTONS
+
+   Injected by the script into whichever separator Zen provides; the
+   script tags that element .zen-tidy-host so these rules do not
+   have to be written twice.
+   ================================================================ */
+
+/* Hide Zen's own Clear button only while this mod provides one. */
+@media (-moz-bool-pref: "zen-tabs-organiser.enable_clear") {
+  .zen-workspace-close-unpinned-tabs-button {
+    display: none !important;
+  }
+}
+
+.pinned-tabs-container-separator #zen-tidy-sort-button,
+.pinned-tabs-container-separator #zen-tidy-clear-button,
+.vertical-pinned-tabs-container-separator #zen-tidy-sort-button,
+.vertical-pinned-tabs-container-separator #zen-tidy-clear-button,
+#zen-tidy-sort-button,
+#zen-tidy-clear-button {
+  visibility: visible !important;
+  opacity: 0.6 !important;
+  font-size: 11px !important;
+  appearance: none !important;
+  -moz-appearance: none !important;
+  padding: 2px 8px !important;
+  margin: 0 2px !important;
+  border: none !important;
+  border-radius: var(--border-radius-small, 4px) !important;
+  background: transparent !important;
+  color: inherit !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  transition:
+    opacity var(--zto-exit) var(--zto-ease-out),
+    background-color var(--zto-exit) var(--zto-ease-out),
+    transform var(--zto-exit) var(--zto-ease-out) !important;
+
+  label {
+    display: block !important;
+    cursor: pointer;
+  }
+}
+
+/* Gated: touch devices fire hover on tap, which sticks. */
+@media (hover: hover) and (pointer: fine) {
+  #zen-tidy-sort-button:hover,
+  #zen-tidy-clear-button:hover {
+    opacity: 1 !important;
+    background-color: color-mix(in srgb, currentColor 10%, transparent) !important;
+  }
+}
+
+/* Instant confirmation that the press registered. */
+#zen-tidy-sort-button:active,
+#zen-tidy-clear-button:active {
+  opacity: 1 !important;
+  transform: scale(0.97) !important;
+}
+
+#zen-tidy-sort-button .toolbarbutton-icon,
+#zen-tidy-clear-button .toolbarbutton-icon {
+  display: none !important;
+}
+
+@media not (-moz-bool-pref: "zen-tabs-organiser.enable_sort") {
+  #zen-tidy-sort-button { display: none !important; }
+}
+@media not (-moz-bool-pref: "zen-tabs-organiser.enable_clear") {
+  #zen-tidy-clear-button { display: none !important; }
+}
+
+/* ============= Separator host ============= */
+.zen-tidy-host {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  height: 24px !important;
+  padding: 0 4px !important;
+  margin: 0 !important;
+  background-color: transparent !important;
+  overflow: visible !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.zen-tidy-host * {
+  visibility: visible !important;
+}
+
+/* Hide the native separator line, we draw our own below */
+.zen-tidy-host::before {
+  display: none !important;
+}
+
+.zen-tidy-host toolbarseparator {
+  height: 1px !important;
+  flex: 1 !important;
+  margin: auto 4px !important;
+  position: relative !important;
+  overflow: visible !important;
+  border: none !important;
+  /* Only the colour changes between states — height stays 1px. */
+  transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
+}
+
+.zen-tidy-host toolbarseparator::before {
+  border: none !important;
+}
+
+/* ================================================================
+   SORT / CLEAR FEEDBACK
+
+   Only opacity and transform are animated: they skip layout and
+   paint. The one exception is the closing tab, which has to give
+   its height back to the strip.
+   ================================================================ */
+
+@keyframes zenSortingPulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+.zen-tidy-host.separator-is-sorting toolbarseparator {
+  background-color: #c4a7e7 !important;
+  animation: zenSortingPulse 1.2s ease-in-out infinite !important;
+}
+
+.zen-tidy-host.separator-is-sorting > #zen-tidy-sort-button,
+.zen-tidy-host.separator-is-sorting > #zen-tidy-clear-button {
+  z-index: 200 !important;
+  pointer-events: auto !important;
+}
+
+.tab-is-sorting .tab-icon-image,
+.tab-is-sorting .tab-label {
+  animation: zenSortingPulse 1.5s ease-in-out infinite;
+}
+
+/* Closing tab. Scoped to the tab actually being closed — an earlier
+   version put this transition on every .tabbrowser-tab in the
+   browser, animating max-height, margin and padding for 500ms, which
+   made the whole strip feel heavy on every open, close and reorder. */
+.tab-closing {
+  animation: zenTidyFadeUp var(--zto-exit) var(--zto-ease-out) forwards;
+  overflow: hidden;
+}
+
+@keyframes zenTidyFadeUp {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 100px;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+    padding-block: 0;
+    margin-block: 0;
+  }
+}
+
+/* ================================================================
+   Reduced motion: keep the fades that explain what happened, drop
+   the movement.
+   ================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  tab-group:not([split-view-group]) > .tab-group-container > tab {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+  tab-group:not([split-view-group])[collapsed] > .tab-group-container > tab:not([selected], [visuallyselected], [multiselected]) {
+    transform: none;
+  }
+  #zen-tidy-sort-button:active,
+  #zen-tidy-clear-button:active {
+    transform: none !important;
+  }
+  .tab-closing {
+    animation-duration: 1ms;
+  }
+  .tab-is-sorting .tab-icon-image,
+  .tab-is-sorting .tab-label,
+  .zen-tidy-host.separator-is-sorting toolbarseparator {
+    animation: none !important;
+  }
+}

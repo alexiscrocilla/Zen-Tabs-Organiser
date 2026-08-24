@@ -1,5 +1,22 @@
-// VERSION 2.2.0 — Zen Tabs Organiser (AI + Domain hybrid)
+// ==UserScript==
+// @name           Zen Tabs Organiser
+// @description    Sort tabs into groups using AI or domain (Sine mod)
+// @version        2.8.0
+// @include        chrome://browser/content/browser.xhtml
+// ==/UserScript==
+//
+// Loaded by Sine (https://github.com/CosmoCreeper/Sine) as a `.uc.js` script.
+// Sine can re-inject this file into a live window (mod toggled, updated,
+// preferences rebuilt), so the script guards against double injection and
+// registers an unload listener that fully undoes what it did.
 (() => {
+    // --- Re-injection guard (Sine may load this file into a live window) ---
+    if (window.ZenTabsOrganiser?.loaded) return;
+
+    // --- Teardown registry, drained by the unload listener at the bottom ---
+    const disposers = [];
+    const onCleanup = (fn) => disposers.push(fn);
+
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
     const ENABLE_CLEAR_PREF = "zen-tabs-organiser.enable_clear";
@@ -10,6 +27,7 @@
     const MIN_GROUP_SIZE_PREF  = "zen-tabs-organiser.min_group_size";
     const AUTO_ICONS_PREF      = "zen-tabs-organiser.auto_icons";
     const AUTO_COLORS_PREF     = "zen-tabs-organiser.auto_colors";
+    const ATG_ACTIVE_PREF      = "zen-tabs-organiser.atg_active";   // set by this script, read by chrome.css
 
     // --- Helper: read preferences ---
     const getPref = (prefName, defaultValue = "") => {
@@ -39,6 +57,7 @@
     ensureBoolPref(ENABLE_CLEAR_PREF, true);
     ensureBoolPref(AUTO_ICONS_PREF, true);
     ensureBoolPref(AUTO_COLORS_PREF, true);
+    ensureBoolPref(ATG_ACTIVE_PREF, false);
 
     // --- Ensure int prefs exist ---
     const ensureIntPref = (pref, val) => {
@@ -50,14 +69,71 @@
     };
     ensureIntPref(MIN_GROUP_SIZE_PREF, 2);
 
-    // --- Read preferences at load ---
-    const ENABLE_SORT  = getPref(ENABLE_SORT_PREF, true);
-    const ENABLE_CLEAR = getPref(ENABLE_CLEAR_PREF, true);
+    // --- Preferences are read live, never cached ---
+    // Sine applies preference changes without reloading the script, so caching
+    // values at load time would leave the mod stuck on stale settings until
+    // the browser restarts. Sort/Clear button visibility is handled in
+    // chrome.css through @media (-moz-bool-pref: ...), which is live already.
+    const minGroupSize = () => parseInt(getPref(MIN_GROUP_SIZE_PREF, "2"), 10) || 2;
+    const autoIcons    = () => !!getPref(AUTO_ICONS_PREF, true);
+    const autoColors   = () => !!getPref(AUTO_COLORS_PREF, true);
 
-    // AI prefs are read live in askAIForMultipleTopics (not cached here)
-    const MIN_GROUP_SIZE  = parseInt(getPref(MIN_GROUP_SIZE_PREF, "2"), 10) || 2;
-    const AUTO_ICONS      = getPref(AUTO_ICONS_PREF, true);
-    const AUTO_COLORS     = getPref(AUTO_COLORS_PREF, true);
+    // --- Advanced Tab Groups detection ---
+    // Both mods style tab groups and both load as Sine user sheets, so
+    // whichever loads last wins every tie. Rather than fight, chrome.css puts
+    // its whole group design behind
+    //     @media not (-moz-bool-pref: "zen-tabs-organiser.atg_active")
+    // and this keeps that pref in sync with reality. The pref persists, so a
+    // restart applies the right design immediately instead of flashing the
+    // wrong one while ATG loads.
+    const atgInstance = () => globalThis.advancedTabGroups;
+
+    const syncAtgPref = () => {
+        const present = typeof atgInstance() !== 'undefined';
+        try {
+            if (getPref(ATG_ACTIVE_PREF, false) !== present) {
+                Services.prefs.setBoolPref(ATG_ACTIVE_PREF, present);
+                console.log(`[ZenTabsOrganiser] Advanced Tab Groups ${present ? 'detected' : 'not present'}`);
+            }
+        } catch {}
+        return present;
+    };
+
+    // ATG is a separate Sine script; load order between the two is not
+    // guaranteed, so re-check for a while before settling.
+    const watchForAtg = () => {
+        syncAtgPref();
+        [1000, 3000, 8000].forEach(delay => later(syncAtgPref, delay));
+    };
+
+    // --- What this mod is allowed to touch ---
+    // Advanced Tab Groups skips the same two things, and for good reason:
+    //   <zen-folder>          Zen's own folders. A separate element (nsZenFolder
+    //                         extends MozTabbrowserTabGroup) that Zen lays out and
+    //                         animates itself in ZenFolders.animateCollapse().
+    //   [split-view-group]    Split views are modelled as tab groups. Ungrouping
+    //                         their tabs or removing the group destroys the split;
+    //                         Zen's own `set collapsed` bails out on them too.
+    // Only plain, non-split tab groups are ours to sort, colour and clean up.
+    const GROUP_SELECTOR = 'tab-group:not([split-view-group])';
+
+    /** True for a container this mod must leave alone. */
+    const isForeignContainer = (el) => {
+        if (!el) return false;
+        return el.isZenFolder === true
+            || el.localName === 'zen-folder'
+            || el.hasAttribute?.('split-view-group');
+    };
+
+    /** The group that owns a tab, or null when it is loose or inside a foreign container. */
+    const ownGroupOf = (tab) => {
+        const group = tab?.closest?.(GROUP_SELECTOR);
+        if (!group) return null;
+        // A tab nested in a folder inside one of our groups still belongs to the folder.
+        const nearest = tab.closest('tab-group, zen-folder');
+        if (nearest !== group && isForeignContainer(nearest)) return null;
+        return group;
+    };
 
     // --- AI prompt template (Arc Tidy Tabs style) ---
     const PROMPT_TEMPLATE = `You organize browser tabs into groups. Read each tab's title and URL carefully, then assign it to the BEST matching category.
@@ -117,159 +193,67 @@ Output:`;
             'into', 'from', 'just', 'only', 'some', 'more', 'best', 'free', 'top', 'pro',
         ]),
         minKeywordLength: 3,
-        consolidationDistanceThreshold: 2,
-        styles: `
-        /*
-         * All separator rules use .zen-tidy-host which is added by JS at
-         * runtime to whichever element is found (pinned-tabs-container-separator
-         * OR vertical-pinned-tabs-container-separator). This avoids duplicating
-         * every rule for both class names.
-         */
-
-        /* ============= Sort & Clear buttons ============= */
-        /* Override Zen's native toolbarbutton hiding in separator */
-        .pinned-tabs-container-separator #zen-tidy-sort-button,
-        .pinned-tabs-container-separator #zen-tidy-clear-button,
-        .vertical-pinned-tabs-container-separator #zen-tidy-sort-button,
-        .vertical-pinned-tabs-container-separator #zen-tidy-clear-button,
-        #zen-tidy-sort-button,
-        #zen-tidy-clear-button {
-            visibility: visible !important;
-            opacity: 0.6 !important;
-            font-size: 11px !important;
-            appearance: none !important;
-            -moz-appearance: none !important;
-            padding: 2px 8px !important;
-            margin: 0 2px !important;
-            border: none !important;
-            border-radius: 4px !important;
-            background: transparent !important;
-            color: inherit !important;
-            cursor: pointer !important;
-            pointer-events: auto !important;
-            label { display: block !important; cursor: pointer; }
-        }
-
-        #zen-tidy-sort-button:hover,
-        #zen-tidy-clear-button:hover {
-            opacity: 1 !important;
-            background: color-mix(in srgb, currentColor 10%, transparent) !important;
-        }
-
-        #zen-tidy-sort-button .toolbarbutton-icon,
-        #zen-tidy-clear-button .toolbarbutton-icon {
-            display: none !important;
-        }
-
-        /* Hide buttons via preference toggles */
-        @media not (-moz-bool-pref: "${ENABLE_SORT_PREF}") {
-            #zen-tidy-sort-button { display: none !important; }
-        }
-        @media not (-moz-bool-pref: "${ENABLE_CLEAR_PREF}") {
-            #zen-tidy-clear-button { display: none !important; }
-        }
-
-        /* ============= Separator host ============= */
-        .zen-tidy-host {
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: center !important;
-            justify-content: flex-end !important;
-            min-height: 24px !important;
-            max-height: 24px !important;
-            height: 24px !important;
-            padding: 0 4px !important;
-            margin: 0 !important;
-            background-color: transparent !important;
-            overflow: visible !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-        }
-
-        .zen-tidy-host * {
-            visibility: visible !important;
-        }
-
-        /* Hide the native separator line */
-        .zen-tidy-host::before {
-            display: none !important;
-        }
-
-        /* ============= Separator line ============= */
-        .zen-tidy-host toolbarseparator {
-            height: 1px !important;
-            flex: 1 !important;
-            margin: auto 4px !important;
-            position: relative !important;
-            overflow: visible !important;
-            border: none !important;
-        }
-
-        .zen-tidy-host toolbarseparator::before {
-            border: none !important;
-        }
-
-        /* ============= Sorting animation ============= */
-        .zen-tidy-host toolbarseparator {
-            transition: height 0.6s ease, background 0.6s ease, opacity 0.6s ease !important;
-        }
-
-        @keyframes zenSortingPulse {
-            0%, 100% { opacity: 0.45; }
-            50% { opacity: 1; }
-        }
-
-        .zen-tidy-host.separator-is-sorting toolbarseparator {
-            height: 1px !important;
-            background: #c4a7e7 !important;
-            animation: zenSortingPulse 1.2s ease-in-out infinite 0.6s !important;
-        }
-        .zen-tidy-host.separator-is-sorting > #zen-tidy-sort-button,
-        .zen-tidy-host.separator-is-sorting > #zen-tidy-clear-button {
-            z-index: 200 !important;
-            pointer-events: auto !important;
-        }
-
-        /* ============= Tab animations ============= */
-        .tab-closing {
-            animation: zenTidyFadeUp 0.5s forwards;
-        }
-        @keyframes zenTidyFadeUp {
-            0%   { opacity: 1; transform: translateY(0); }
-            100% { opacity: 0; transform: translateY(-20px); max-height: 0; padding: 0; margin: 0; border: 0; }
-        }
-        @keyframes zenTidyPulse {
-            0%, 100% { opacity: 0.6; }
-            50%      { opacity: 1; }
-        }
-        .tab-is-sorting .tab-icon-image,
-        .tab-is-sorting .tab-label {
-            animation: zenTidyPulse 1.5s ease-in-out infinite;
-            will-change: opacity;
-        }
-        .tabbrowser-tab {
-            transition: transform 0.3s ease-out, opacity 0.3s ease-out,
-                        max-height 0.5s ease-out, margin 0.5s ease-out, padding 0.5s ease-out;
-        }
-    `
+        consolidationDistanceThreshold: 2
     };
 
     // --- Globals & State ---
     let isSorting = false;
     let commandListenerAdded = false;
+    let destroyed = false;
 
-    // --- Style injection ---
-    const injectStyles = () => {
-        let el = document.getElementById('zen-tabs-organiser-styles');
-        if (el) {
-            if (el.textContent !== CONFIG.styles) el.textContent = CONFIG.styles;
-            return;
+    // --- Tracked timers ---
+    // Every pending timer is remembered so teardown can cancel it; a stray
+    // callback firing after the mod is unloaded would touch a DOM we no
+    // longer own.
+    const pendingTimeouts = new Set();
+    const pendingIntervals = new Set();
+
+    const later = (fn, delay) => {
+        if (destroyed) return null;
+        const id = setTimeout(() => {
+            pendingTimeouts.delete(id);
+            if (!destroyed) fn();
+        }, delay);
+        pendingTimeouts.add(id);
+        return id;
+    };
+
+    const every = (fn, delay) => {
+        if (destroyed) return null;
+        const id = setInterval(() => {
+            if (destroyed) {
+                clearInterval(id);
+                pendingIntervals.delete(id);
+                return;
+            }
+            fn();
+        }, delay);
+        pendingIntervals.add(id);
+        return id;
+    };
+
+    const clearTracked = (id, kind) => {
+        if (id === null || id === undefined) return;
+        if (kind === 'interval') {
+            clearInterval(id);
+            pendingIntervals.delete(id);
+        } else {
+            clearTimeout(id);
+            pendingTimeouts.delete(id);
         }
-        el = Object.assign(document.createElement('style'), {
-            id: 'zen-tabs-organiser-styles',
-            textContent: CONFIG.styles
-        });
-        document.head.appendChild(el);
+    };
+
+    const clearAllTimers = () => {
+        pendingTimeouts.forEach(clearTimeout);
+        pendingTimeouts.clear();
+        pendingIntervals.forEach(clearInterval);
+        pendingIntervals.clear();
+    };
+
+    // Styles now live in chrome.css, which Sine loads and unloads with the mod.
+    // Drop the <style> element older versions injected into this window.
+    const removeLegacyStyleElement = () => {
+        document.getElementById('zen-tabs-organiser-styles')?.remove();
     };
 
     // --- Tab data extraction ---
@@ -376,7 +360,7 @@ Output:`;
     const findGroupElement = (topicName, workspaceId) => {
         const safe = topicName.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
         try {
-            return document.querySelector(`tab-group[label="${safe}"]:has(tab[zen-workspace-id="${workspaceId}"])`);
+            return document.querySelector(`${GROUP_SELECTOR}[label="${safe}"]:has(tab[zen-workspace-id="${workspaceId}"])`);
         } catch { return null; }
     };
 
@@ -533,7 +517,7 @@ Output:`;
             console.error(`[ZenTabsOrganiser] AI error:`, error);
             return []; // Domain fallback
         } finally {
-            setTimeout(() => {
+            later(() => {
                 validTabs.forEach(tab => { if (tab?.isConnected) tab.classList.remove('tab-is-sorting'); });
             }, 200);
         }
@@ -592,9 +576,42 @@ Output:`;
         return null;
     }
 
+    // Sites whose own capitalisation is not what a naive uppercase-first gives.
+    const BRAND_CASING = {
+        github: 'GitHub', gitlab: 'GitLab', youtube: 'YouTube', mediafire: 'MediaFire',
+        openrouter: 'OpenRouter', openai: 'OpenAI', linkedin: 'LinkedIn', paypal: 'PayPal',
+        stackoverflow: 'Stack Overflow', deepl: 'DeepL', huggingface: 'Hugging Face',
+        wetransfer: 'WeTransfer', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp',
+        aliexpress: 'AliExpress', ebay: 'eBay', icloud: 'iCloud', bbc: 'BBC',
+        npmjs: 'npm', arxiv: 'arXiv', notion: 'Notion', figma: 'Figma',
+    };
+
+    /**
+     * Human-readable name for a domain: the site's own name, without the
+     * public suffix. "mediafire.com" -> "MediaFire", not "Mediafire.Com".
+     */
     function getDomainLabel(domain) {
-        const stripped = domain.startsWith('www.') ? domain.slice(4) : domain;
-        return stripped.split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('.');
+        const stripped = domain.replace(/^www\./, '');
+
+        // An IP address has no registrable name to extract — self-hosted
+        // dashboards are usually reached this way. Keep it verbatim.
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(stripped) || stripped.includes(':')) {
+            return stripped;
+        }
+
+        const parts = stripped.split('.');
+
+        // Drop the public suffix so the label is the site, not the registry.
+        let nameParts = parts;
+        if (parts.length > 2 && MULTI_PART_TLDS.includes(parts.slice(-2).join('.'))) {
+            nameParts = parts.slice(0, -2);
+        } else if (parts.length > 1) {
+            nameParts = parts.slice(0, -1);
+        }
+
+        // "docs.google.com" -> "Google": the registrable name, not the subdomain.
+        const name = nameParts[nameParts.length - 1] || stripped;
+        return BRAND_CASING[name] ?? (name.charAt(0).toUpperCase() + name.slice(1));
     }
 
     /**
@@ -724,98 +741,172 @@ Output:`;
         '#45B7A0', // Mint
     ];
 
-    let paletteIndex = 0;
-
-    function autoAssignColors(groupElementsMap) {
-        if (!AUTO_COLORS) return;
-
-        paletteIndex = 0; // Reset on each Sort
-
-        for (const [label, groupEl] of groupElementsMap) {
-            if (!groupEl?.isConnected) continue;
-            try {
-                const color = CURATED_PALETTE[paletteIndex % CURATED_PALETTE.length];
-                paletteIndex++;
-
-                // Set as favicon-style custom color + mark as managed
-                groupEl.setAttribute('zen-tidy-color', 'true');
-                groupEl.color = `${groupEl.id}-favicon`;
-                document.documentElement.style.setProperty(
-                    `--tab-group-color-${groupEl.id}-favicon`, color);
-                document.documentElement.style.setProperty(
-                    `--tab-group-color-${groupEl.id}-favicon-invert`, color);
-
-                console.log(`[ZenTabsOrganiser] Auto-color: "${label}" → ${color}`);
-            } catch (e) {
-                console.warn(`[ZenTabsOrganiser] Failed to set color for "${label}":`, e);
-            }
-        }
-
-        // Save our color mapping to SessionStore for restoration on restart
+    // --- Colour storage, keyed by group id ---
+    // Colour is a property of a group's identity, not of its position in a
+    // list. Deriving it from an index meant the same group changed colour on
+    // every Sort, because the map is rebuilt from DOM order each time.
+    const readSavedColors = () => {
         try {
-            const colorMap = {};
-            for (const [label, groupEl] of groupElementsMap) {
-                if (groupEl?.id) {
-                    const idx = Array.from(groupElementsMap.keys()).indexOf(label);
-                    colorMap[groupEl.id] = CURATED_PALETTE[idx % CURATED_PALETTE.length];
-                }
-            }
+            const raw = SessionStore.getCustomWindowValue(window, 'zenTidyColors');
+            const parsed = raw ? JSON.parse(raw) : null;
+            return (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch {
+            return {};
+        }
+    };
+
+    const writeSavedColors = (colorMap) => {
+        try {
             SessionStore.setCustomWindowValue(window, 'zenTidyColors', JSON.stringify(colorMap));
-            console.log('[ZenTabsOrganiser] Colors saved to SessionStore');
         } catch (e) {
             console.warn('[ZenTabsOrganiser] Failed to persist colors:', e);
         }
+    };
+
+    /**
+     * Paint one group. Idempotent, so re-running it causes no visible change.
+     *
+     * Firefox resolves a group's colour indirectly: `set color(code)` writes
+     *     --tab-group-color: var(--tab-group-<code>)
+     * and the palette entry is expected to exist under that name. Earlier
+     * versions of this mod published `--tab-group-color-<code>` instead — a
+     * name Firefox 154 never reads — so every group fell back to grey.
+     *
+     * Rather than guess the convention of the build we happen to run on, set
+     * the resolved properties directly on the element. Inline properties win
+     * over whatever the setter wrote, and no name has to match.
+     */
+    const applyGroupColor = (groupEl, color) => {
+        if (groupEl.style.getPropertyValue('--tab-group-color') === color) return false;
+
+        // Still go through the setter so Firefox keeps its own bookkeeping and
+        // the choice survives in the session store.
+        try { groupEl.color = `${groupEl.id}-favicon`; } catch {}
+
+        groupEl.setAttribute('zen-tidy-color', 'true');
+        groupEl.style.setProperty('--tab-group-color', color);
+        groupEl.style.setProperty('--tab-group-color-invert', color);
+        groupEl.style.setProperty('--tab-group-color-pale',
+            `color-mix(in srgb, ${color} 35%, white)`);
+        return true;
+    };
+
+    /**
+     * Assign a colour to every group, keeping whatever a group already has.
+     * Only genuinely new groups draw from the palette, and they take a colour
+     * no visible sibling is using.
+     */
+    function autoAssignColors(groupElementsMap) {
+        if (!autoColors()) return;
+
+        const saved = readSavedColors();
+        const live = [...groupElementsMap.values()].filter(el => el?.isConnected && el.id);
+
+        // Colours already spoken for by groups that are still on screen.
+        const taken = new Set(live.map(el => saved[el.id]).filter(Boolean));
+        const nextColorMap = {};
+
+        for (const groupEl of live) {
+            let color = saved[groupEl.id];
+            if (!color) {
+                color = CURATED_PALETTE.find(c => !taken.has(c))
+                    ?? CURATED_PALETTE[taken.size % CURATED_PALETTE.length];
+                taken.add(color);
+            }
+            nextColorMap[groupEl.id] = color;
+            try {
+                applyGroupColor(groupEl, color);
+            } catch (e) {
+                console.warn(`[ZenTabsOrganiser] Failed to set color for "${groupEl.id}":`, e);
+            }
+        }
+
+        // Rewriting from live groups only also prunes ids that no longer exist.
+        writeSavedColors(nextColorMap);
     }
 
-    /** Restore curated palette colors from SessionStore on startup */
+    /** Re-apply saved colours at startup, before any sort has run. */
     function restoreColors() {
-        try {
-            const raw = SessionStore.getCustomWindowValue(window, 'zenTidyColors');
-            if (!raw) return;
-            const colorMap = JSON.parse(raw);
-            let restored = 0;
-            for (const [groupId, color] of Object.entries(colorMap)) {
-                const group = document.getElementById(groupId);
-                if (group?.isConnected) {
-                    group.setAttribute('zen-tidy-color', 'true');
-                    group.color = `${groupId}-favicon`;
-                    document.documentElement.style.setProperty(`--tab-group-color-${groupId}-favicon`, color);
-                    document.documentElement.style.setProperty(`--tab-group-color-${groupId}-favicon-invert`, color);
+        if (!autoColors()) return;
+        let restored = 0;
+        for (const [groupId, color] of Object.entries(readSavedColors())) {
+            const group = document.getElementById(groupId);
+            if (group?.isConnected) {
+                try {
+                    applyGroupColor(group, color);
                     restored++;
+                } catch (e) {
+                    console.warn(`[ZenTabsOrganiser] Failed to restore color for "${groupId}":`, e);
                 }
             }
-            if (restored > 0) console.log(`[ZenTabsOrganiser] Restored ${restored} group colors from session`);
-        } catch (e) {
-            console.warn('[ZenTabsOrganiser] Failed to restore colors:', e);
         }
+        if (restored > 0) console.log(`[ZenTabsOrganiser] Restored ${restored} group colors from session`);
     }
 
     /**
      * Auto-assign icons to groups that don't have one yet.
      * Respects the zen-tabs-organiser.auto_icons preference.
      */
-    function autoAssignIcons(groupElementsMap) {
-        if (!AUTO_ICONS) return;
-        if (typeof globalThis.advancedTabGroups === 'undefined') {
-            console.log('[ZenTabsOrganiser] ATG not available, skipping auto-icons');
-            return;
+    // Class names for the icon this mod injects itself. Deliberately distinct
+    // from ATG's .tab-group-icon-container so the two can never collide.
+    const ICON_HOST_CLASS = 'zto-group-icon-container';
+    const ICON_CLASS = 'zto-group-icon';
+
+    /**
+     * Put an icon in a group's header without Advanced Tab Groups.
+     * ATG does the same thing — a container in the label, holding an <image> —
+     * so when ATG is running we let it own the icon instead of adding a second.
+     */
+    const applyOwnGroupIcon = (groupEl, iconUrl) => {
+        const labelContainer = groupEl.querySelector(':scope > .tab-group-label-container');
+        if (!labelContainer) return false;
+
+        let host = labelContainer.querySelector(`:scope > .${ICON_HOST_CLASS}`);
+        if (host?.getAttribute('data-zto-icon') === iconUrl) return false;
+
+        if (!host) {
+            host = document.createXULElement('hbox');
+            host.className = ICON_HOST_CLASS;
+            labelContainer.insertBefore(host, labelContainer.firstChild);
         }
-        const atg = globalThis.advancedTabGroups;
+
+        // iconUrl is always built from ICON_BASE plus a name from ICON_MAP,
+        // never from page content.
+        host.textContent = '';
+        host.appendChild(
+            window.MozXULElement.parseXULToFragment(
+                `<image class="${ICON_CLASS}" src="${iconUrl}"/>`
+            ).firstChild
+        );
+        host.setAttribute('data-zto-icon', iconUrl);
+        return true;
+    };
+
+    /** Undo every icon this mod injected. */
+    const removeOwnGroupIcons = () => {
+        document.querySelectorAll(`.${ICON_HOST_CLASS}`).forEach(el => el.remove());
+    };
+
+    function autoAssignIcons(groupElementsMap) {
+        if (!autoIcons()) return;
+        const atg = atgInstance();
 
         for (const [label, groupEl] of groupElementsMap) {
             if (!groupEl?.isConnected) continue;
 
-            // Skip if group already has a custom icon
-            const existingIcon = groupEl.querySelector('.tab-group-icon .group-icon, .tab-group-icon label');
-            if (existingIcon) continue;
+            // Respect an icon the user or ATG already put there.
+            if (groupEl.querySelector('.tab-group-icon .group-icon, .tab-group-icon label')) continue;
 
             const tabs = Array.from(groupEl.querySelectorAll('tab'));
             const iconUrl = pickIconForGroup(label, tabs);
 
             try {
-                atg.applyGroupIcon(groupEl, iconUrl);
-
-                console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
+                const applied = typeof atg !== 'undefined'
+                    ? (atg.applyGroupIcon(groupEl, iconUrl), true)
+                    : applyOwnGroupIcon(groupEl, iconUrl);
+                if (applied) {
+                    console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
+                }
             } catch (e) {
                 console.warn(`[ZenTabsOrganiser] Failed to set icon for "${label}":`, e);
             }
@@ -845,7 +936,7 @@ Output:`;
             if (!currentWorkspaceId) { console.error('[ZenTabsOrganiser] No active workspace'); return; }
 
             // --- Gather existing group names ---
-            const groupSelector = `tab-group:has(tab[zen-workspace-id="${currentWorkspaceId}"])`;
+            const groupSelector = `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${currentWorkspaceId}"])`;
             const allExistingGroupNames = new Set();
             document.querySelectorAll(groupSelector).forEach(el => {
                 const label = el.getAttribute('label');
@@ -857,13 +948,17 @@ Output:`;
             if (isSortingSelected) {
                 initialTabs = selectedTabs.filter(tab =>
                     tab.getAttribute('zen-workspace-id') === currentWorkspaceId &&
-                    !tab.pinned && !tab.hasAttribute('zen-empty-tab') && tab.isConnected
+                    !tab.pinned && !tab.hasAttribute('zen-empty-tab') && tab.isConnected &&
+                    !isForeignContainer(tab.closest('tab-group, zen-folder'))
                 );
             } else {
                 // Collect ALL tabs first
                 initialTabs = Array.from(gBrowser.tabs).filter(tab => {
                     if (tab.getAttribute('zen-workspace-id') !== currentWorkspaceId) return false;
                     if (tab.pinned || tab.hasAttribute('zen-empty-tab') || !tab.isConnected) return false;
+                    // Leave tabs the user already filed in a Zen folder or a split
+                    // view where they are; sorting them out would dismantle those.
+                    if (isForeignContainer(tab.closest('tab-group, zen-folder'))) return false;
                     // Exclude internal/settings pages from sorting
                     const url = tab.linkedBrowser?.currentURI?.spec || '';
                     if (url.startsWith('about:') || url.startsWith('chrome:') || url.startsWith('moz-extension:')) return false;
@@ -878,7 +973,9 @@ Output:`;
             if (!isSortingSelected) {
                 let ungrouped = 0;
                 for (const tab of initialTabs) {
-                    if (tab.closest('tab-group')) {
+                    // Only ungroup out of groups this mod manages; leaving a
+                    // folder or a split view would break it.
+                    if (ownGroupOf(tab)) {
                         try { gBrowser.ungroupTab(tab); ungrouped++; } catch {}
                     }
                 }
@@ -915,7 +1012,7 @@ Output:`;
 
                 const potentialKwGroups = [];
                 keywordToTabs.forEach((tabsSet, keyword) => {
-                    if (tabsSet.size >= MIN_GROUP_SIZE) {
+                    if (tabsSet.size >= minGroupSize()) {
                         potentialKwGroups.push({ keyword, tabs: tabsSet, size: tabsSet.size });
                     }
                 });
@@ -924,7 +1021,7 @@ Output:`;
                 potentialKwGroups.forEach(({ keyword, tabs }) => {
                     const finalTabs = new Set();
                     tabs.forEach(t => { if (!handledTabs.has(t)) finalTabs.add(t); });
-                    if (finalTabs.size >= MIN_GROUP_SIZE) {
+                    if (finalTabs.size >= minGroupSize()) {
                         const cat = processTopic(keyword);
                         if (cat !== "Uncategorized") {
                             preGroups[cat] = Array.from(finalTabs);
@@ -945,11 +1042,14 @@ Output:`;
                 });
 
                 for (const hostname of Object.keys(hostCounts).sort((a, b) => hostCounts[b] - hostCounts[a])) {
-                    if (hostCounts[hostname] >= MIN_GROUP_SIZE) {
-                        const cat = processTopic(hostname);
-                        if (preGroups[cat] || cat === "Uncategorized") continue;
+                    if (hostCounts[hostname] >= minGroupSize()) {
+                        // Name it after the site, not through processTopic, whose
+                        // punctuation stripping turns "mediafire.com" into
+                        // "Mediafirecom".
+                        const cat = getDomainLabel(hostname);
+                        if (!cat || preGroups[cat] || BANNED_TOPICS.has(cat.toLowerCase())) continue;
                         const tabsForHost = initialTabs.filter(t => !handledTabs.has(t) && tabDataCache.get(t)?.hostname === hostname);
-                        if (tabsForHost.length >= MIN_GROUP_SIZE) {
+                        if (tabsForHost.length >= minGroupSize()) {
                             preGroups[cat] = tabsForHost;
                             tabsForHost.forEach(t => handledTabs.add(t));
                         }
@@ -1030,7 +1130,7 @@ Output:`;
             // --- Remove groups below minimum size threshold ---
             for (const topic of Object.keys(finalGroups)) {
                 const tabs = finalGroups[topic].filter(t => t?.isConnected);
-                if (tabs.length < MIN_GROUP_SIZE) {
+                if (tabs.length < minGroupSize()) {
                     delete finalGroups[topic];
                 } else {
                     finalGroups[topic] = tabs;
@@ -1052,6 +1152,7 @@ Output:`;
             });
 
             // --- Create / update groups ---
+            const newGroupsToColor = [];
             for (const topic in finalGroups) {
                 const tabsForTopic = finalGroups[topic];
                 if (tabsForTopic.length === 0) continue;
@@ -1068,7 +1169,7 @@ Output:`;
                         }
                         // Collect tabs not already in this group
                         const tabsToAdd = tabsForTopic.filter(tab =>
-                            tab?.isConnected && tab.closest('tab-group') !== existingEl
+                            tab?.isConnected && ownGroupOf(tab) !== existingEl
                         );
                         if (tabsToAdd.length > 0) {
                             if (typeof existingEl.addTabs === 'function') {
@@ -1089,6 +1190,10 @@ Output:`;
                         const newGroup = gBrowser.addTabGroup(tabsForTopic, opts);
                         if (newGroup?.isConnected) {
                             existingGroupElements.set(topic, newGroup);
+                            // Colour it now. The reconciliation pass below runs half a
+                            // second later; without this the group renders grey until
+                            // then and looks like it picks a colour twice.
+                            newGroupsToColor.push(newGroup);
                         } else {
                             const fallback = findGroupElement(topic, currentWorkspaceId);
                             if (fallback?.isConnected) existingGroupElements.set(topic, fallback);
@@ -1101,10 +1206,22 @@ Output:`;
                 }
             }
 
+            // Paint brand-new groups straight away, before the browser gets a
+            // chance to show them in the placeholder grey.
+            if (newGroupsToColor.length) {
+                const seed = new Map(newGroupsToColor.map(g => [g.getAttribute('label') || g.id, g]));
+                try { autoAssignColors(seed); } catch (e) {
+                    console.warn('[ZenTabsOrganiser] Initial colouring failed:', e);
+                }
+            }
+
             // --- Clean up empty groups left behind after re-sort ---
-            setTimeout(() => {
+            later(() => {
                 try {
-                    const wsGroups = document.querySelectorAll(`tab-group:has(tab[zen-workspace-id="${currentWorkspaceId}"]), tab-group:not(:has(tab))`);
+                    const wsGroups = document.querySelectorAll(
+                        `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${currentWorkspaceId}"]),
+                         ${GROUP_SELECTOR}[zen-workspace-id="${currentWorkspaceId}"]:not(:has(tab))`
+                    );
                     for (const group of wsGroups) {
                         const tabs = group.querySelectorAll('tab');
                         if (tabs.length === 0 && group.isConnected) {
@@ -1128,12 +1245,12 @@ Output:`;
                 const wsId = window.gZenWorkspaces?.activeWorkspace;
                 if (wsId) {
                     const allGroups = new Map();
-                    document.querySelectorAll(`tab-group:has(tab[zen-workspace-id="${wsId}"])`).forEach(g => {
+                    document.querySelectorAll(`${GROUP_SELECTOR}:has(tab[zen-workspace-id="${wsId}"])`).forEach(g => {
                         const lbl = g.getAttribute('label');
                         if (lbl) allGroups.set(lbl, g);
                     });
                     if (allGroups.size > 0) {
-                        setTimeout(() => {
+                        later(() => {
                             autoAssignColors(allGroups);
                             autoAssignIcons(allGroups);
                         }, 500);
@@ -1143,7 +1260,7 @@ Output:`;
                 console.warn('[ZenTabsOrganiser] Auto-assign error:', e);
             }
             if (separators.length > 0) {
-                setTimeout(() => {
+                later(() => {
                     separators.forEach(sep => {
                         if (sep?.isConnected) {
                             sep.classList.remove('separator-is-sorting');
@@ -1151,7 +1268,7 @@ Output:`;
                     });
                 }, 3000);
             }
-            setTimeout(() => {
+            later(() => {
                 Array.from(gBrowser.tabs).forEach(tab => { if (tab?.isConnected) tab.classList.remove('tab-is-sorting'); });
             }, 500);
         }
@@ -1165,13 +1282,13 @@ Output:`;
         try {
             const currentWorkspaceId = window.gZenWorkspaces?.activeWorkspace;
             if (!currentWorkspaceId) return;
-            const groupSelector = `tab-group:has(tab[zen-workspace-id="${currentWorkspaceId}"])`;
             const tabsToClose = [];
 
             for (const tab of gBrowser.tabs) {
                 const sameWs = tab.getAttribute('zen-workspace-id') === currentWorkspaceId;
-                const gp = tab.closest('tab-group');
-                const inGroup = gp ? gp.matches(groupSelector) : false;
+                // A tab counts as grouped if it sits in ANY container — one of our
+                // groups, a Zen folder, or a split view. Clear takes loose tabs only.
+                const inGroup = !!tab.closest('tab-group, zen-folder');
                 if (sameWs && !tab.selected && !tab.pinned && !inGroup && !tab.hasAttribute('zen-empty-tab') && tab.isConnected) {
                     tabsToClose.push(tab);
                 }
@@ -1182,7 +1299,7 @@ Output:`;
 
             tabsToClose.forEach(tab => {
                 tab.classList.add('tab-closing');
-                setTimeout(() => {
+                later(() => {
                     if (tab?.isConnected) {
                         try {
                             gBrowser.removeTab(tab, { animate: false, skipSessionStore: false, closeWindowWithLastTab: false });
@@ -1246,7 +1363,6 @@ Output:`;
             }
         }
     }
-
     function setupCommandsAndListener() {
         const cmdSet = document.querySelector('commandset#zenCommandSet');
         if (!cmdSet) {
@@ -1270,13 +1386,23 @@ Output:`;
 
         if (!commandListenerAdded) {
             try {
-                cmdSet.addEventListener('command', (event) => {
+                const handler = (event) => {
                     if (event.target.id === 'cmd_zenTidySort') sortTabsByTopic();
                     else if (event.target.id === 'cmd_zenTidyClear') clearTabs();
-                });
+                };
+                cmdSet.addEventListener('command', handler);
                 commandListenerAdded = true;
+                onCleanup(() => {
+                    cmdSet.removeEventListener('command', handler);
+                    commandListenerAdded = false;
+                });
             } catch (e) { console.error('[ZenTabsOrganiser] Error adding command listener:', e); }
         }
+
+        onCleanup(() => {
+            cmdSet.querySelector('#cmd_zenTidySort')?.remove();
+            cmdSet.querySelector('#cmd_zenTidyClear')?.remove();
+        });
     }
 
     // ==========================================
@@ -1297,47 +1423,56 @@ Output:`;
             if (typeof gZenWorkspaces._zenTidyOriginals.onTabBrowserInserted === 'function') {
                 try { gZenWorkspaces._zenTidyOriginals.onTabBrowserInserted.call(gZenWorkspaces, event); } catch {}
             }
-            setTimeout(addButtonsToAllSeparators, 150);
+            later(addButtonsToAllSeparators, 150);
         };
 
         gZenWorkspaces.updateTabsContainers = function(...args) {
             if (typeof gZenWorkspaces._zenTidyOriginals.updateTabsContainers === 'function') {
                 try { gZenWorkspaces._zenTidyOriginals.updateTabsContainers.apply(gZenWorkspaces, args); } catch {}
             }
-            setTimeout(addButtonsToAllSeparators, 150);
+            later(addButtonsToAllSeparators, 150);
         };
+
+        // Sine can unload the mod while the browser stays open — put the
+        // original Zen methods back so nothing keeps calling into this script.
+        onCleanup(() => {
+            const originals = gZenWorkspaces._zenTidyOriginals;
+            if (!originals) return;
+            if (typeof originals.onTabBrowserInserted === 'function') {
+                gZenWorkspaces.onTabBrowserInserted = originals.onTabBrowserInserted;
+            } else {
+                delete gZenWorkspaces.onTabBrowserInserted;
+            }
+            if (typeof originals.updateTabsContainers === 'function') {
+                gZenWorkspaces.updateTabsContainers = originals.updateTabsContainers;
+            } else {
+                delete gZenWorkspaces.updateTabsContainers;
+            }
+            delete gZenWorkspaces._zenTidyOriginals;
+            delete gZenWorkspaces._zenTidyHooksApplied;
+        });
     }
 
     // ==========================================
     //  Initialization
     // ==========================================
 
-    /** Update --zen-tidy-collapse-delay on each group based on tab count */
-    function updateCollapseTimings() {
-        document.querySelectorAll('tab-group').forEach(group => {
-            const tabCount = group.querySelectorAll('.tab-group-container tab').length;
-            // Last tab's delay = (min(tabCount, 10) - 1) * 0.03s, plus the animation duration 0.25s
-            const lastTabEnd = Math.min(tabCount, 10) * 0.03 + 0.25;
-            group.style.setProperty('--zen-tidy-collapse-duration', `${lastTabEnd.toFixed(2)}s`);
-        });
-    }
-
-    function setupCollapseTimingObserver() {
-        updateCollapseTimings();
-        // Re-calculate when groups are collapsed/expanded or created
-        const observer = new MutationObserver(() => updateCollapseTimings());
-        const tabContainer = document.getElementById('tabbrowser-arrowscrollbox');
-        if (tabContainer) {
-            observer.observe(tabContainer, { childList: true, subtree: true, attributes: true, attributeFilter: ['collapsed'] });
-        }
+    /** Undo the DOM changes made by addButtonsToAllSeparators() */
+    function removeButtonsAndHosts() {
+        document.querySelectorAll('#zen-tidy-sort-button, #zen-tidy-clear-button')
+            .forEach(el => el.remove());
+        document.querySelectorAll('.zen-tidy-host')
+            .forEach(el => el.classList.remove('zen-tidy-host', 'separator-is-sorting'));
+        document.querySelectorAll('.tab-is-sorting')
+            .forEach(el => el.classList.remove('tab-is-sorting'));
     }
 
     function initializeScript() {
-        console.log('[ZenTabsOrganiser] v2.2.0 loading…');
+        console.log('[ZenTabsOrganiser] v2.8.0 loading…');
         let checkCount = 0;
         const maxChecks = 30;
 
-        const interval = setInterval(() => {
+        const interval = every(() => {
             checkCount++;
             const sepOk = !!document.querySelector('.pinned-tabs-container-separator, .vertical-pinned-tabs-container-separator');
             const periOk = !!document.querySelector('#tabbrowser-arrowscrollbox-periphery');
@@ -1346,34 +1481,77 @@ Output:`;
             const wsOk = typeof gZenWorkspaces !== 'undefined' && typeof gZenWorkspaces.activeWorkspace !== 'undefined';
 
             if (gbOk && cmdOk && (sepOk || periOk) && wsOk) {
-                clearInterval(interval);
+                clearTracked(interval, 'interval');
                 const setup = () => {
+                    if (destroyed) return;
                     try {
-                        injectStyles();
+                        removeLegacyStyleElement();
                         setupCommandsAndListener();
                         addButtonsToAllSeparators();
+                        onCleanup(removeButtonsAndHosts);
+                        onCleanup(removeOwnGroupIcons);
                         setupZenWorkspaceHooks();
-                        setupCollapseTimingObserver();
+                        watchForAtg();
                         // Restore curated colors after ATG has processed groups
-                        setTimeout(restoreColors, 2000);
+                        later(restoreColors, 2000);
                         console.log('[ZenTabsOrganiser] Setup complete ✓');
                     } catch (e) {
                         console.error('[ZenTabsOrganiser] Setup error:', e);
                     }
                 };
                 if ('requestIdleCallback' in window) requestIdleCallback(setup, { timeout: 2000 });
-                else setTimeout(setup, 500);
+                else later(setup, 500);
             } else if (checkCount > maxChecks) {
-                clearInterval(interval);
+                clearTracked(interval, 'interval');
                 console.error(`[ZenTabsOrganiser] Failed to init after ${maxChecks}s`, { gbOk, cmdOk, sepOk, periOk, wsOk });
             }
         }, 1000);
     }
 
+    // ==========================================
+    //  Teardown (Sine unload / disable / update)
+    // ==========================================
+
+    const destroy = () => {
+        if (destroyed) return;
+        destroyed = true;
+
+        clearAllTimers();
+
+        // Run disposers newest-first so teardown mirrors setup.
+        while (disposers.length) {
+            try {
+                disposers.pop()();
+            } catch (e) {
+                console.warn('[ZenTabsOrganiser] Cleanup step failed:', e);
+            }
+        }
+
+        if (window.ZenTabsOrganiser?.destroy === destroy) delete window.ZenTabsOrganiser;
+        console.log('[ZenTabsOrganiser] Unloaded');
+    };
+
+    // Public handle: lets Sine (and other mods) trigger the actions or unload us.
+    window.ZenTabsOrganiser = {
+        loaded: true,
+        version: '2.8.0',
+        sort: sortTabsByTopic,
+        clear: clearTabs,
+        destroy,
+    };
+
+    // Sine injects addUnloadListener into every chrome window it manages.
+    // Declaring `supportsUnload` in theme.json is only honoured if we register here.
+    if (typeof window.addUnloadListener === 'function') {
+        window.addUnloadListener(destroy);
+    }
+
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
         initializeScript();
     } else {
-        window.addEventListener('load', initializeScript, { once: true });
+        const onLoad = () => initializeScript();
+        window.addEventListener('load', onLoad, { once: true });
+        onCleanup(() => window.removeEventListener('load', onLoad));
     }
 
 })();
