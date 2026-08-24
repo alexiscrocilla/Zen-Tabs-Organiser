@@ -6,7 +6,8 @@ Sort your browser tabs into groups using **AI** or **domain-based** grouping in 
 
 ## Features
 
-- **Sort** — Groups all open tabs via AI (OpenAI, Gemini, Ollama, Mistral) or by domain
+- **Sort** — Groups all open tabs on device with Firefox's own AI, through a cloud provider (OpenAI, Gemini, Mistral) or a local Ollama, or by domain
+- **On-device grouping** — Uses the two models Firefox ships for Smart Tab Grouping: one clusters tabs by meaning, the other names each cluster. No API key, nothing leaves the browser
 - **Clear** — Closes ungrouped, unpinned tabs with animation
 - **Auto-colors** — 12-color palette, each group keeping its color across sorts and restarts
 - **Auto-icons** — Contextual icons (code, shopping, finance, smart home, etc.), injected by this mod itself
@@ -43,14 +44,33 @@ Search for **Zen Tabs Organiser** in the marketplace list and click **Install**.
 
 ## AI configuration
 
-By default, grouping is domain-based. To use AI:
+By default, grouping is domain-based — no network access at all.
+
+### On device, no API key
+
+Pick **Local — Firefox AI** as the provider and that is the whole setup. It runs
+`Mozilla/smart-tab-embedding` to cluster tabs by meaning and
+`Mozilla/smart-tab-topic` to name each cluster, both through Firefox's own ML
+engine. Tab titles never leave the browser.
+
+Two things worth knowing: the models are downloaded the first time you sort, so
+that run is slower than the rest; and the engine will not start unless
+`browser.ml.enable` is on, which the mod turns on for you the first time you
+choose this provider — never before.
+
+If a cluster ends up close to a group you already have, it joins that group
+rather than creating a near-duplicate beside it.
+
+### Through a cloud provider
+
+To use a hosted model instead:
 
 1. Open **`about:preferences#sineMods`** → **Zen Tabs Organiser** → the settings (gear) button
 2. Pick an **AI provider** (Gemini, Ollama, Mistral, or OpenAI)
 3. Enter your **API key** (not needed for local Ollama)
 4. Optionally set a custom **model** name (defaults: `gpt-4o-mini`, `gemini-2.0-flash`, etc.)
 
-Tab titles and URLs are sent to the provider you select. With **None**, nothing leaves the browser.
+Tab titles and URLs are sent to the provider you select. With **None** or **Local — Firefox AI**, nothing leaves the browser.
 
 Settings apply immediately — the mod reads its preferences at the moment you press Sort, never caching them at load time.
 

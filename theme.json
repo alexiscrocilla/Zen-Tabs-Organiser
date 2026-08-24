@@ -1,9 +1,9 @@
 {
   "id": "zen-tabs-organiser",
   "name": "Zen Tabs Organiser",
-  "description": "Sort tabs into groups using AI or domain. Auto-colors, auto-icons, clear ungrouped tabs.",
+  "description": "Sort tabs into groups with on-device AI or by domain. Auto-colors, auto-icons, clear ungrouped tabs.",
   "author": "Alexis",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "homepage": "https://github.com/alexiscrocilla/Zen-Tabs-Organiser",
   "readme": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/README.md",
   "image": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/Screenshot.png",
@@ -29,10 +29,12 @@
     "ai",
     "tidy",
     "sort",
-    "clear"
+    "clear",
+    "local-ai",
+    "privacy"
   ],
   "createdAt": "2026-03-25",
-  "updatedAt": "2026-08-24T19:30:00Z",
+  "updatedAt": "2026-08-24T21:00:00Z",
   "fork": [
     "zen"
   ]

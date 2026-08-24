@@ -50,18 +50,37 @@
     "defaultValue": "0",
     "placeholder": false,
     "options": [
-      { "value": "0", "label": "None (group by domain)" },
-      { "value": "1", "label": "Gemini" },
-      { "value": "2", "label": "Ollama" },
-      { "value": "3", "label": "Mistral" },
-      { "value": "4", "label": "OpenAI" }
+      {
+        "value": "0",
+        "label": "None (group by domain)"
+      },
+      {
+        "value": "5",
+        "label": "Local — Firefox AI, no API key"
+      },
+      {
+        "value": "1",
+        "label": "Gemini"
+      },
+      {
+        "value": "2",
+        "label": "Ollama"
+      },
+      {
+        "value": "3",
+        "label": "Mistral"
+      },
+      {
+        "value": "4",
+        "label": "OpenAI"
+      }
     ]
   },
   {
     "property": "zen-tabs-organiser.ai_api_key",
     "label": "API Key",
     "type": "string",
-    "placeholder": "Required for Gemini, Mistral, OpenAI"
+    "placeholder": "Gemini, Mistral, OpenAI — not needed for Local or Ollama"
   },
   {
     "property": "zen-tabs-organiser.ai_model_name",

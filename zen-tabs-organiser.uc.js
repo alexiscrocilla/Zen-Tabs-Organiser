@@ -385,6 +385,186 @@ Output:`;
     //  AI Interaction
     // ==========================================
 
+    // ==========================================
+    //  Local grouping — Firefox's built-in ML engine
+    // ==========================================
+    // Firefox ships the two models its own Smart Tab Grouping uses: an
+    // embedding model to cluster tabs by meaning, and a topic model to name a
+    // cluster. Both run on device, need no API key, and send nothing anywhere.
+    // They are fetched through Firefox's model hub the first time they run.
+
+    const LOCAL_AI = {
+        // Cosine similarity above which two tabs belong together.
+        tabSimilarity: 0.45,
+        // Similarity to an existing group's name needed to reuse it rather
+        // than inventing a near-duplicate, plus the nudge that favours reuse.
+        existingGroupSimilarity: 0.55,
+        existingGroupBoost: 0.1,
+        // First run downloads the models, so the budget is generous.
+        timeoutMs: 120000,
+    };
+
+    const withTimeout = (promise, ms, label) => Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            later(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+    ]);
+
+    const cosineSimilarity = (a, b) => {
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length || !a.length) return 0;
+        let dot = 0, na = 0, nb = 0;
+        for (let i = 0; i < a.length; i++) {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+        if (!na || !nb) return 0;
+        return dot / (Math.sqrt(na) * Math.sqrt(nb));
+    };
+
+    const centroidOf = (vectors) => {
+        if (!vectors.length) return null;
+        const out = new Array(vectors[0].length).fill(0);
+        for (const v of vectors) for (let i = 0; i < out.length; i++) out[i] += v[i];
+        return out.map(v => v / vectors.length);
+    };
+
+    /** The engine returns the pooled vector under several shapes; accept them all. */
+    const readEmbedding = (result) => {
+        if (Array.isArray(result?.[0]?.embedding)) return result[0].embedding;
+        if (Array.isArray(result?.[0]) && typeof result[0][0] === 'number') return result[0];
+        if (Array.isArray(result) && typeof result[0] === 'number') return result;
+        if (result?.data) return Array.from(result.data);
+        return null;
+    };
+
+    let localEngines = null;
+
+    const getLocalEngines = async () => {
+        if (localEngines) return localEngines;
+
+        // The engine refuses to start while this is off, and it ships off in
+        // some builds. Flipped here rather than at load time, so the browser
+        // pref only changes once the local provider is actually chosen.
+        try {
+            if (!Services.prefs.getBoolPref('browser.ml.enable', false)) {
+                Services.prefs.setBoolPref('browser.ml.enable', true);
+                console.log('[ZenTabsOrganiser] Enabled browser.ml.enable for local grouping');
+            }
+        } catch (e) {
+            console.warn('[ZenTabsOrganiser] Could not enable browser.ml.enable:', e);
+        }
+
+        const { createEngine } = ChromeUtils.importESModule(
+            'chrome://global/content/ml/EngineProcess.sys.mjs');
+        localEngines = {
+            embedding: await createEngine({
+                taskName: 'feature-extraction',
+                modelId: 'Mozilla/smart-tab-embedding',
+                modelHub: 'huggingface',
+                engineId: 'zen-tabs-organiser-embedding',
+            }),
+            topic: await createEngine({
+                taskName: 'text2text-generation',
+                modelId: 'Mozilla/smart-tab-topic',
+                modelHub: 'huggingface',
+                engineId: 'zen-tabs-organiser-topic',
+            }),
+        };
+        return localEngines;
+    };
+
+    const embedText = async (engine, text) => {
+        // "pooling: mean" is what turns the per-token tensor into one sentence
+        // vector; without it the result cannot be compared.
+        const result = await engine.run({
+            args: [[text]],
+            options: { pooling: 'mean', normalize: true },
+        });
+        const vector = readEmbedding(result);
+        return Array.isArray(vector) && typeof vector[0] === 'number' ? vector : null;
+    };
+
+    const nameCluster = async (engine, titles) => {
+        const keywords = [...new Set(titles.flatMap(extractTitleKeywords))].slice(0, 5);
+        const input = `Topic from keywords: ${keywords.join(', ')}. titles:\n${titles.join('\n')}`;
+        const result = await engine.run({
+            args: [input],
+            options: { max_new_tokens: 8, temperature: 0.7 },
+        });
+        const raw = (result?.[0]?.generated_text || result?.generated_text || '')
+            .split('\n').map(l => l.trim()).find(Boolean) || '';
+        // processTopic already rejects generic names and normalises casing.
+        const name = processTopic(raw.replace(/^['"`]+|['"`]+$/g, ''));
+        return name === 'Uncategorized' ? null : name;
+    };
+
+    /**
+     * Cluster tabs locally and name each cluster.
+     * Returns the same [{tab, topic}] shape as the remote providers, or []
+     * to hand over to domain grouping.
+     */
+    const localGroupTabs = async (validTabs, existingCategoryNames = []) => {
+        const { embedding, topic } = await getLocalEngines();
+
+        const titles = validTabs.map(tab => getTabData(tab).title);
+        const vectors = [];
+        for (const title of titles) {
+            vectors.push(await embedText(embedding, title));
+        }
+
+        const usable = validTabs
+            .map((tab, i) => ({ tab, title: titles[i], vector: vectors[i] }))
+            .filter(entry => entry.vector);
+
+        if (usable.length < 2) {
+            console.warn('[ZenTabsOrganiser] Local AI produced no usable embeddings');
+            return [];
+        }
+
+        // Greedy clustering: each tab joins the closest cluster it is near
+        // enough to, otherwise it starts one.
+        const clusters = [];
+        for (const entry of usable) {
+            let best = null, bestScore = LOCAL_AI.tabSimilarity;
+            for (const cluster of clusters) {
+                const score = cosineSimilarity(entry.vector, cluster.centroid);
+                if (score >= bestScore) { best = cluster; bestScore = score; }
+            }
+            if (best) {
+                best.entries.push(entry);
+                best.centroid = centroidOf(best.entries.map(e => e.vector));
+            } else {
+                clusters.push({ entries: [entry], centroid: entry.vector });
+            }
+        }
+
+        // Reuse an existing group when a cluster is close to its name, so
+        // sorting twice does not produce near-duplicate groups.
+        const existingVectors = new Map();
+        for (const name of existingCategoryNames) {
+            const vector = await embedText(embedding, name);
+            if (vector) existingVectors.set(name, vector);
+        }
+
+        const results = [];
+        for (const cluster of clusters) {
+            let name = null;
+            for (const [existing, vector] of existingVectors) {
+                const score = cosineSimilarity(cluster.centroid, vector) + LOCAL_AI.existingGroupBoost;
+                if (score >= LOCAL_AI.existingGroupSimilarity) { name = existing; break; }
+            }
+            if (!name) {
+                name = await nameCluster(topic, cluster.entries.map(e => e.title));
+            }
+            if (!name) continue;   // unnamed cluster falls through to domain grouping
+            for (const entry of cluster.entries) results.push({ tab: entry.tab, topic: name });
+        }
+
+        console.log(`[ZenTabsOrganiser] Local AI: ${clusters.length} clusters over ${usable.length} tabs`);
+        return results;
+    };
+
     const askAIForMultipleTopics = async (tabs, existingCategoryNames = []) => {
         const validTabs = tabs.filter(tab => tab?.isConnected);
         if (validTabs.length === 0) return [];
@@ -403,6 +583,20 @@ Output:`;
         validTabs.forEach(tab => tab.classList.add('tab-is-sorting'));
 
         try {
+            if (aiModel === "5") {
+                // Local engine: no prompt, no network, no key.
+                try {
+                    const local = await withTimeout(
+                        localGroupTabs(validTabs, existingCategoryNames),
+                        LOCAL_AI.timeoutMs, 'Local AI');
+                    if (local.length) return local;
+                    console.warn('[ZenTabsOrganiser] Local AI grouped nothing — using domain fallback');
+                } catch (e) {
+                    console.error('[ZenTabsOrganiser] Local AI unavailable:', e);
+                }
+                return [];
+            }
+
             const tabDataArray = validTabs.map(getTabData);
             const formattedTabDataList = tabDataArray.map((d, i) =>
                 `${i + 1}. ${d.title} | ${d.url}`
@@ -1490,6 +1684,7 @@ Output:`;
                         addButtonsToAllSeparators();
                         onCleanup(removeButtonsAndHosts);
                         onCleanup(removeOwnGroupIcons);
+                        onCleanup(() => { localEngines = null; });
                         setupZenWorkspaceHooks();
                         watchForAtg();
                         // Restore curated colors after ATG has processed groups
