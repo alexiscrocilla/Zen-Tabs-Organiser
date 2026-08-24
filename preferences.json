@@ -27,7 +27,7 @@
   },
   {
     "property": "zen-tabs-organiser.auto_icons",
-    "label": "Auto-assign icons to groups\n*Requires the Advanced Tab Groups mod*",
+    "label": "Auto-assign icons to groups",
     "type": "checkbox",
     "defaultValue": true
   },

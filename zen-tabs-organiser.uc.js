@@ -1687,7 +1687,7 @@ Output:`;
                         onCleanup(() => { localEngines = null; });
                         setupZenWorkspaceHooks();
                         watchForAtg();
-                        // Restore curated colors after ATG has processed groups
+                        // A short delay lets the tab strip finish its own layout first
                         later(restoreColors, 2000);
                         console.log('[ZenTabsOrganiser] Setup complete ✓');
                     } catch (e) {

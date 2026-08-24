@@ -3,7 +3,7 @@
   "name": "Zen Tabs Organiser",
   "description": "Sort tabs into groups with on-device AI or by domain. Auto-colors, auto-icons, clear ungrouped tabs.",
   "author": "Alexis",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "homepage": "https://github.com/alexiscrocilla/Zen-Tabs-Organiser",
   "readme": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/README.md",
   "image": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/Screenshot.png",
@@ -34,7 +34,7 @@
     "privacy"
   ],
   "createdAt": "2026-03-25",
-  "updatedAt": "2026-08-24T21:00:00Z",
+  "updatedAt": "2026-08-25T08:00:00Z",
   "fork": [
     "zen"
   ]
