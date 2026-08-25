@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.5.2';
+    const MOD_VERSION = '3.5.3';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -910,6 +910,38 @@ Output:`;
         '#45B7A0', // Mint
     ];
 
+    // --- Corner radius, inherited from a real tab ---
+    // A group's boxes are meant to look like tab rows, corners included. A
+    // theme cannot be counted on to route its radius through
+    // `--tab-border-radius`: Nebula, for one, paints `.tab-background`
+    // directly with its own variable and `!important`, so any variable this
+    // mod picks in the stylesheet is simply the wrong one under some theme.
+    // The value that is never wrong is the one a tab actually ends up with,
+    // so read that and republish it for the stylesheet to use.
+    const RADIUS_VAR = '--zto-tab-radius';
+
+    function syncTabRadius() {
+        try {
+            // An essential is a different shape by design in some themes, so
+            // measure an ordinary tab. The unscoped query is the fallback for
+            // a window whose only tabs sit outside the strip's own container.
+            const bg =
+                document.querySelector('#tabbrowser-tabs .tabbrowser-tab:not([zen-essential]) .tab-background') ||
+                document.querySelector('.tabbrowser-tab:not([zen-essential]) .tab-background');
+            if (!bg) return;
+            // Deliberately a single corner: `borderRadius` resolves to a
+            // multi-value shorthand whenever the corners differ, which would
+            // be nonsense inside the `<r> <r> 0 0` shorthands this feeds.
+            const radius = window.getComputedStyle(bg).borderTopLeftRadius;
+            // 0px is a real answer — a theme is allowed square tabs — so only
+            // an empty one means nothing was resolved.
+            if (!radius) return;
+            document.documentElement.style.setProperty(RADIUS_VAR, radius);
+        } catch (e) {
+            console.warn('[ZenTabsOrganiser] Could not read the tab corner radius:', e);
+        }
+    }
+
     // --- Colour storage, keyed by group id ---
     // Colour is a property of a group's identity, not of its position in a
     // list. Deriving it from an index meant the same group changed colour on
@@ -1456,6 +1488,7 @@ Output:`;
             console.error('[ZenTabsOrganiser] Sort error:', error);
         } finally {
             isSorting = false;
+            syncTabRadius();
 
             // Always auto-assign colors & icons to ALL groups in current workspace
             try {
@@ -1648,6 +1681,7 @@ Output:`;
                 try { gZenWorkspaces._zenTidyOriginals.updateTabsContainers.apply(gZenWorkspaces, args); } catch {}
             }
             later(addButtonsToAllSeparators, 150);
+            later(syncTabRadius, 150);
         };
 
         // Sine can unload the mod while the browser stays open — put the
@@ -1707,6 +1741,7 @@ Output:`;
                         addButtonsToAllSeparators();
                         onCleanup(removeButtonsAndHosts);
                         onCleanup(removeOwnGroupIcons);
+                        onCleanup(() => document.documentElement.style.removeProperty(RADIUS_VAR));
                         onCleanup(() => { localEngines = null; });
                         setupZenWorkspaceHooks();
 
@@ -1728,6 +1763,7 @@ Output:`;
                                 clearTracked(settleTimer, 'timeout');
                                 clearTracked(ceilingTimer, 'timeout');
                                 observer.disconnect();
+                                syncTabRadius();
                                 restoreColors();
                                 restoreIcons();
                             };

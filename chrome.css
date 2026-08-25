@@ -90,7 +90,7 @@ tab-group:not([split-view-group])[collapsed] > .tab-group-container > tab-split-
   overflow: hidden !important;
 }
 
-tab-group:not([split-view-group]) > .tab-group-container {
+tab-group:not([split-view-group])[collapsed] > .tab-group-container {
   overflow: hidden !important;
 }
 
@@ -148,6 +148,14 @@ tab-group:not([split-view-group]) {
 
   /* Rail drawn in the background layer: costs no horizontal space. */
   --zto-rail-image: linear-gradient(to right, var(--zto-rail) 0 3px, transparent 3px);
+
+  /* Corners, matched to whatever a tab actually gets. --zto-tab-radius is
+     read off a live tab and published on the root by the script, because a
+     theme need not route its radius through --tab-border-radius: Nebula
+     paints .tab-background directly with a variable of its own. The rest of
+     the chain is what to use before the script has run, or if it cannot find
+     a tab to measure. */
+  --zto-radius: var(--zto-tab-radius, var(--tab-border-radius, var(--border-radius-medium, 6px)));
 }
 
 /* --- Header ---
@@ -178,7 +186,7 @@ tab-group:not([split-view-group]) > .tab-group-label-container {
   background-color: var(--zto-header-tint) !important;
   background-image: var(--zto-rail-image) !important;
   background-repeat: no-repeat !important;
-  border-radius: var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) 0 0 !important;
+  border-radius: var(--zto-radius) var(--zto-radius) 0 0 !important;
   transition:
     background-color var(--zto-enter) var(--zto-ease-out),
     border-radius var(--zto-enter) var(--zto-ease-out) !important;
@@ -231,14 +239,14 @@ tab-group:not([split-view-group]) > .tab-group-container {
   background-color: var(--zto-body-tint) !important;
   background-image: var(--zto-rail-image) !important;
   background-repeat: no-repeat !important;
-  border-radius: 0 0 var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) !important;
+  border-radius: 0 0 var(--zto-radius) var(--zto-radius) !important;
   transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
   animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) 60ms backwards;
 }
 
 /* Closed: the header becomes a standalone pill. */
 tab-group:not([split-view-group])[collapsed] > .tab-group-label-container {
-  border-radius: var(--border-radius-medium, 6px) !important;
+  border-radius: var(--zto-radius) !important;
 }
 
 tab-group:not([split-view-group])[collapsed] > .tab-group-container {

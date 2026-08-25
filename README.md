@@ -173,7 +173,17 @@ never caching them at load time.
   keyed by group id) and restored at startup, mirroring how colours are handled —
   without it, the icon existed only in DOM Zen rebuilds from the session on every
   restart, so it stayed gone until the next Sort.
-- Group colours all derive from `--tab-group-color`. The five `--zto-*` values at the top
+- A group's corners are matched to a tab's by measuring, not by naming a variable.
+  A theme need not route its radius through `--tab-border-radius` — Nebula paints
+  `.tab-background` directly, `!important`, with a variable of its own — so the script
+  reads the radius a real tab actually computes to and publishes it as
+  `--zto-tab-radius`. `chrome.css` falls back to `--tab-border-radius` for the moment
+  before that runs. Read one corner, not the `border-radius` shorthand, which resolves
+  to several values as soon as the corners differ and would be nonsense inside the
+  `<r> <r> 0 0` the header needs. The value is re-read after every Sort and whenever
+  Zen rebuilds its tab containers, so a theme installed after startup is picked up
+  without a restart.
+- Group colours all derive from `--tab-group-color`. The `--zto-*` tint values at the top
   of the design block in `chrome.css` are the only knobs for tint and text; label text is
   the group colour mixed most of the way to the normal tab text colour, which keeps it
   legible on either theme without a second rule. Measured contrast against the composed
