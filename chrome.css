@@ -150,13 +150,31 @@ tab-group:not([split-view-group]) {
   --zto-rail-image: linear-gradient(to right, var(--zto-rail) 0 3px, transparent 3px);
 }
 
-/* --- Header --- */
+/* --- Header ---
+   Sized to match a tab row exactly, by mirroring the two rules Firefox
+   uses for one: .tab-background (min-height, margin-block, radius) and
+   .tab-content (inline padding). Nothing here is a fixed number, so a
+   theme or density setting that moves tabs moves group headers with
+   them. */
 tab-group:not([split-view-group]) > .tab-group-label-container {
   /* Zen declares this as a <vbox>, which stacks vertically. Without this
      the injected icon lands above the title instead of beside it. */
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
+  min-height: var(--tab-min-height) !important;
+  margin-block: var(--tab-margin-block) !important;
+  padding-inline: var(--tab-inline-padding) !important;
+  /* Firefox pads the header asymmetrically, and only while the group is
+     open, to make room for the group line it draws under the label:
+       #tabbrowser-tabs[orient="vertical"] .tab-group-label-container {
+         margin-block-start: var(--space-small);
+         tab-group:not([collapsed]) > & { padding-block-end: var(--space-small) }
+       }
+     That padding adds to min-height, so an open group came out taller than
+     a closed one with its contents pushed up, while a closed one sat
+     centred. Zeroed so both states are the same row. */
+  padding-block: 0 !important;
   background-color: var(--zto-header-tint) !important;
   background-image: var(--zto-rail-image) !important;
   background-repeat: no-repeat !important;
@@ -173,15 +191,39 @@ tab-group:not([split-view-group]) > .tab-group-label-container {
   }
 }
 
+/* Firefox centres this text by making the line box exactly as tall as the
+   row it allows a group:
+     line-height: calc(var(--tab-group-label-height) - var(--tab-group-line-thickness))
+   The same technique is kept, with the row height corrected to a tab's, so
+   centring does not depend on the container's align-items or on the auto
+   block margins Firefox also sets — any of which a theme can disturb. The
+   line box being the full row height is what puts the text in the middle
+   of it. */
 tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label {
   background: transparent !important;
   color: var(--zto-label-text) !important;
   font-weight: 600 !important;
+  margin-block: 0 !important;
   margin-inline-end: auto !important;
+  min-height: 0 !important;
   min-width: 0 !important;
-  /* The gap before the title is owned by the icon's margin, so the title
-     lands where tab titles do whatever --tab-group-label-padding is. */
-  padding-inline-start: 0 !important;
+  line-height: var(--tab-min-height) !important;
+  /* Spacing before the title is owned by the icon's own
+     --tab-icon-end-margin, exactly as it is for a tab. */
+  padding-inline: 0 !important;
+}
+
+/* A group's painted box lines up with an ordinary tab's, on both edges.
+   Zen insets a tab's visible box with
+     .tab-background { margin-inline: var(--tab-margin-block) }
+   and separately indents a group's direct children by --space-medium.
+   Only the first is wanted: the indent is dropped so a group starts where
+   a tab starts rather than stepping in from it. The group's own tabs then
+   sit that same inset inside the group's background, which is what makes
+   the tint read as holding them. */
+tab-group:not([split-view-group]) > .tab-group-label-container,
+tab-group:not([split-view-group]) > .tab-group-container {
+  margin-inline: var(--tab-margin-block) !important;
 }
 
 /* --- Body: the tint continues, lighter, under the tabs --- */
@@ -210,29 +252,45 @@ tab-group:not([split-view-group])[collapsed] {
   box-shadow: none !important;
 }
 
-/* --- Icon injected by this mod --- */
-/* Sized and placed to land exactly where a tab's favicon does, using the
-   same variable Zen uses for tab padding, so it tracks tab density. */
+/* --- Icon injected by this mod ---
+   The element also carries Firefox's own `tab-icon-image` class, which is
+   styled by an unscoped rule:
+
+     .tab-throbber, .tab-icon-pending, .tab-icon-image, ... {
+       height: 16px; width: 16px;
+       ... margin-inline-end: var(--tab-icon-end-margin);
+     }
+
+   So size and the gap before the title are inherited rather than restated
+   here — a theme like Nebula that restyles favicons restyles this too. The
+   only thing this mod adds is the colour. */
 .zto-group-icon-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-inline: var(--tab-inline-padding, 8px) 8px;
   flex: none;
 }
 
 .zto-group-icon {
-  box-sizing: border-box;   /* 16px overall, like a favicon */
-  width: 16px;
-  height: 16px;
-  padding: 3px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--tab-group-color, gray) 85%, transparent);
+  /* Firefox hides tab icons until the tab marks itself loaded:
+       .tab-icon-image:not([fadein]) { visibility: hidden }
+     Inheriting that class brings the rule along, and this icon never gets
+     a [fadein] attribute because no tab owns it — so it must opt back in.
+     Done here rather than by setting [fadein] in script, which would be
+     borrowing an internal attribute this mod has no business writing.
+     !important is required twice over: Firefox's selector is more specific
+     (a class plus :not([fadein])), and a user sheet's normal declarations
+     lose to an author sheet's regardless. */
+  visibility: visible !important;
+
   /* Zen's selectable icons paint with context-fill; declare the same set
-     the rest of the browser does or the glyph comes out black. */
+     the rest of the browser does or the glyph comes out black. Coloured to
+     match the title, which is already contrast-checked against the header
+     tint — the group's own colour would be the same hue as the background
+     behind it. */
   -moz-context-properties: fill, stroke, fill-opacity;
-  fill: var(--tab-selected-textcolor, #fff);
-  stroke: var(--tab-selected-textcolor, #fff);
+  fill: var(--zto-label-text, currentColor);
+  stroke: var(--zto-label-text, currentColor);
 }
 
 /* Zen draws its own group line; the rail above replaces it. */

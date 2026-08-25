@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.3.0';
+    const MOD_VERSION = '3.5.2';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1042,7 +1042,11 @@ Output:`;
     // from the ".tab-group-icon-container" name other mods commonly use, so
     // that if one happens to also be installed, the two icons cannot collide.
     const ICON_HOST_CLASS = 'zto-group-icon-container';
-    const ICON_CLASS = 'zto-group-icon';
+    // Carries Firefox's own tab-icon-image class alongside this mod's, so the
+    // group icon inherits a favicon's size and end margin from the browser's
+    // unscoped rule instead of restating them — a theme that restyles
+    // favicons restyles this too. The zto- class only carries the colour.
+    const ICON_CLASS = 'tab-icon-image zto-group-icon';
 
     /**
      * Put an icon in a group's header. This mod owns group icons entirely —

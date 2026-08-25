@@ -138,10 +138,37 @@ never caching them at load time.
   unloads that file with the mod.
 - The group header is a Zen `<vbox>`, which stacks vertically. It needs an explicit
   `flex-direction: row` or an injected icon lands above the title instead of beside it.
-- The icon is sized and placed off `--tab-inline-padding`, the same variable Zen uses for
-  tab padding, so it lands exactly where a tab's favicon does and follows tab density.
-  Measured: 0px between the group icon and a tab favicon, and 0px between the group
-  title and a tab title.
+- A group header is sized to match a tab row, by mirroring the two rules Firefox uses
+  for one: `.tab-background` (`--tab-min-height`, `--tab-margin-block`,
+  `--tab-border-radius`) and `.tab-content` (`--tab-inline-padding`). Firefox otherwise
+  pins group labels to `--tab-group-label-height`, which is `--tab-min-height` minus
+  14px, so headers render visibly shorter than tabs unless that is undone.
+- Zero the header's block padding. Firefox pads it asymmetrically, and only while the
+  group is open, to make room for the group line it draws under the label
+  (`tab-group:not([collapsed]) > & { padding-block-end: var(--space-small) }`). That
+  padding adds to `min-height`, so an open group renders taller than a closed one with
+  its contents pushed up, while a closed one sits centred.
+- Centre the label text the way Firefox does — by making the line box as tall as the row
+  (`line-height`) — rather than by relying on the container's `align-items` or the auto
+  block margins Firefox also sets, either of which a theme can disturb. Raising the
+  label's `min-height` is not the same thing: its box fills the row while the text stays
+  at the top of it.
+- A group's painted box lines up with an ordinary tab's on both edges. Zen insets a tab's
+  visible box with `.tab-background { margin-inline: var(--tab-margin-block) }`, and
+  separately indents a group's direct children by `--space-medium`. Only the first is
+  wanted; the indent is dropped so a group starts where a tab starts. The group's own tabs
+  then sit that inset inside its background, which is what makes the tint read as holding
+  them.
+- The injected icon carries Firefox's own `tab-icon-image` class alongside this mod's.
+  That class is styled by an unscoped rule giving it 16x16 and
+  `margin-inline-end: var(--tab-icon-end-margin)`, so size and the gap before the title
+  are inherited rather than restated — a theme like Nebula that restyles favicons
+  restyles this too. The `zto-` class only carries colour — and one
+  `visibility: visible !important`, because that same inherited class also brings
+  `.tab-icon-image:not([fadein]) { visibility: hidden }`, and an icon no tab owns never
+  gets a `[fadein]` attribute. Measured: exact parity with a
+  tab on row height, icon size, icon x and title x, and that parity holds when a theme
+  changes `--tab-min-height` or the favicon size.
 - Group icons this mod injects itself are persisted in SessionStore (`zenTidyIcons`,
   keyed by group id) and restored at startup, mirroring how colours are handled —
   without it, the icon existed only in DOM Zen rebuilds from the session on every
