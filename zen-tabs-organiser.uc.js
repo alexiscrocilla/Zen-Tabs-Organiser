@@ -17,6 +17,11 @@
     const disposers = [];
     const onCleanup = (fn) => disposers.push(fn);
 
+    // Single source of truth for the version string. Read once here so
+    // the startup log, the public handle and any future use of it can
+    // never drift out of sync with each other again.
+    const MOD_VERSION = '3.2.0';
+
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
     const ENABLE_CLEAR_PREF = "zen-tabs-organiser.enable_clear";
@@ -1037,6 +1042,30 @@ Output:`;
         if (restored > 0) console.log(`[ZenTabsOrganiser] Restored ${restored} group colors from session`);
     }
 
+    // --- Icon storage, keyed by group id ---
+    // Advanced Tab Groups persists and restores its own icons at its own
+    // startup (saveGroupIcon / applySavedIcons), so this only needs to cover
+    // the path where ATG is not running: the icon this mod injects itself.
+    // Without it, the icon existed only in a DOM Zen rebuilds from the
+    // session on every restart, so it vanished until the next Sort.
+    const readSavedIcons = () => {
+        try {
+            const raw = SessionStore.getCustomWindowValue(window, 'zenTidyIcons');
+            const parsed = raw ? JSON.parse(raw) : null;
+            return (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch {
+            return {};
+        }
+    };
+
+    const writeSavedIcons = (iconMap) => {
+        try {
+            SessionStore.setCustomWindowValue(window, 'zenTidyIcons', JSON.stringify(iconMap));
+        } catch (e) {
+            console.warn('[ZenTabsOrganiser] Failed to persist icons:', e);
+        }
+    };
+
     /**
      * Auto-assign icons to groups that don't have one yet.
      * Respects the zen-tabs-organiser.auto_icons preference.
@@ -1084,9 +1113,12 @@ Output:`;
     function autoAssignIcons(groupElementsMap) {
         if (!autoIcons()) return;
         const atg = atgInstance();
+        // ATG owns persistence for its own icons; only track ours.
+        const usingOwnIcons = typeof atg === 'undefined';
+        const nextIconMap = {};
 
         for (const [label, groupEl] of groupElementsMap) {
-            if (!groupEl?.isConnected) continue;
+            if (!groupEl?.isConnected || !groupEl.id) continue;
 
             // Respect an icon the user or ATG already put there.
             if (groupEl.querySelector('.tab-group-icon .group-icon, .tab-group-icon label')) continue;
@@ -1095,16 +1127,46 @@ Output:`;
             const iconUrl = pickIconForGroup(label, tabs);
 
             try {
-                const applied = typeof atg !== 'undefined'
-                    ? (atg.applyGroupIcon(groupEl, iconUrl), true)
-                    : applyOwnGroupIcon(groupEl, iconUrl);
-                if (applied) {
+                if (usingOwnIcons) {
+                    const applied = applyOwnGroupIcon(groupEl, iconUrl);
+                    nextIconMap[groupEl.id] = iconUrl;
+                    if (applied) {
+                        console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
+                    }
+                } else {
+                    atg.applyGroupIcon(groupEl, iconUrl);
                     console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
                 }
             } catch (e) {
                 console.warn(`[ZenTabsOrganiser] Failed to set icon for "${label}":`, e);
             }
         }
+
+        // Only rewritten from live groups this mod iconed itself, so this
+        // also prunes ids that no longer exist — same shape as colours.
+        if (usingOwnIcons) writeSavedIcons(nextIconMap);
+    }
+
+    /**
+     * Re-apply saved icons at startup, before any sort has run.
+     * Skipped when Advanced Tab Groups is present: it restores its own
+     * icons independently, and racing it would risk a duplicate.
+     */
+    function restoreIcons() {
+        if (!autoIcons()) return;
+        if (typeof atgInstance() !== 'undefined') return;
+        let restored = 0;
+        for (const [groupId, iconUrl] of Object.entries(readSavedIcons())) {
+            const group = document.getElementById(groupId);
+            if (group?.isConnected) {
+                try {
+                    if (applyOwnGroupIcon(group, iconUrl)) restored++;
+                } catch (e) {
+                    console.warn(`[ZenTabsOrganiser] Failed to restore icon for "${groupId}":`, e);
+                }
+            }
+        }
+        if (restored > 0) console.log(`[ZenTabsOrganiser] Restored ${restored} group icons from session`);
     }
 
     // ==========================================
@@ -1662,7 +1724,7 @@ Output:`;
     }
 
     function initializeScript() {
-        console.log('[ZenTabsOrganiser] v2.8.0 loading…');
+        console.log('[ZenTabsOrganiser] loading…');
         let checkCount = 0;
         const maxChecks = 30;
 
@@ -1689,6 +1751,11 @@ Output:`;
                         watchForAtg();
                         // A short delay lets the tab strip finish its own layout first
                         later(restoreColors, 2000);
+                        // Longer: ATG persists and restores its own icons independently,
+                        // and injecting ours first would leave a duplicate icon once ATG's
+                        // own restore runs. watchForAtg's last check lands at 8000ms, so
+                        // this waits for ATG's presence to be as settled as it will get.
+                        later(restoreIcons, 8500);
                         console.log('[ZenTabsOrganiser] Setup complete ✓');
                     } catch (e) {
                         console.error('[ZenTabsOrganiser] Setup error:', e);
@@ -1729,7 +1796,7 @@ Output:`;
     // Public handle: lets Sine (and other mods) trigger the actions or unload us.
     window.ZenTabsOrganiser = {
         loaded: true,
-        version: '2.8.0',
+        version: MOD_VERSION,
         sort: sortTabsByTopic,
         clear: clearTabs,
         destroy,

@@ -20,7 +20,7 @@ Inspired by [Arc’s Tidy Tabs](https://arc.net/max).
 - **Clear** — Closes ungrouped, unpinned tabs with animation
 - **Auto-colors** — 12-color palette, each group keeping its color across sorts and restarts
 - **Auto-icons** — Contextual icons (code, shopping, finance, smart home, etc.), injected
-  by this mod itself
+  by this mod itself and restored after a restart without needing to sort again
 - **Workspace-aware** — Only affects tabs in the active workspace
 - **Leaves your folders alone** — Zen folders and split views are never sorted,
   ungrouped or removed
@@ -142,6 +142,13 @@ never caching them at load time.
   tab padding, so it lands exactly where a tab's favicon does and follows tab density.
   Measured: 0px between the group icon and a tab favicon, and 0px between the group
   title and a tab title.
+- Group icons this mod injects itself are persisted in SessionStore (`zenTidyIcons`,
+  keyed by group id) and restored at startup, mirroring how colours are handled —
+  without it, the icon existed only in DOM Zen rebuilds from the session on every
+  restart, so it stayed gone until the next Sort. Advanced Tab Groups persists and
+  restores its own icons independently, so the restore here backs off entirely when
+  ATG is detected; racing it would leave two icons on the same group, so it runs late
+  (8.5s in), after ATG's own detection has had time to settle.
 - Group colours all derive from `--tab-group-color`. The five `--zto-*` values at the top
   of the design block in `chrome.css` are the only knobs for tint and text; label text is
   the group colour mixed most of the way to the normal tab text colour, which keeps it
