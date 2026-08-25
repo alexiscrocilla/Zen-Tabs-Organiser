@@ -1,245 +1,129 @@
 # Zen Tabs Organiser
 
-Sort your browser tabs into groups using **AI** or **domain-based** grouping in one click.
-Inspired by [Arc’s Tidy Tabs](https://arc.net/max).
+Turn a crowded Zen sidebar into clear, color-coded tab groups with one click. Zen Tabs Organiser can sort locally by domain, use Firefox's on-device AI, or connect to your preferred AI provider.
 
-> **Sine mod.** This mod is packaged for [Sine](https://github.com/CosmoCreeper/Sine),
-> the community mod manager for Zen and other Firefox-based browsers. Zen’s own Mods
-> Registry only loads CSS and preferences, so the tab-sorting logic — which is JavaScript —
-> cannot run there. Sine loads it.
+<p align="center">
+  <img src="Screenshot.png" alt="Zen sidebar before sorting, then after sorting with opened and collapsed tab groups" width="960">
+</p>
 
----
-
-## Features
-
-- **Sort** — Group all open tabs using Firefox's AI, a cloud provider (OpenAI, Gemini,
-  Mistral), or by domain
-- **On-device grouping** — Uses the two models Firefox ships for Smart Tab Grouping:
-  one clusters tabs by meaning, the other names each cluster. No API key, nothing leaves
-  the browser
-- **Clear** — Closes ungrouped, unpinned tabs with animation
-- **Auto-colors** — 12-color palette, each group keeping its color across sorts and restarts
-- **Auto-icons** — Contextual icons (code, shopping, finance, smart home, etc.), injected
-  by this mod itself and restored after a restart without needing to sort again
-- **Workspace-aware** — Only affects tabs in the active workspace
-- **Leaves your folders alone** — Zen folders and split views are never sorted,
-  ungrouped or removed
-- **Animation** — Visual feedback when expanding or collapsing groups
-- **Settings** — Full configuration in the Sine mod settings dialog (AI provider, API key,
-  model)
-- **Hot enable / disable** — The mod cleans up after itself, so toggling or uninstalling
-  it takes effect without a browser restart
-
----
+## Why use it?
+- **One-click sorting** into meaningful tab groups
+- **Private by default** with domain-based grouping and no network requests
+- **On-device AI** through Firefox's own Smart Tab Grouping models
+- **Automatic colors and icons** that persist across browser restarts
+- **Workspace-aware behavior** that only touches the active workspace
+- **Safe around Zen features**: pinned tabs, folders, and split views are left alone
+- **Quick cleanup** of loose tabs with the **Clear** button
 
 ## Requirements
-
 - [Zen Browser](https://zen-browser.app/)
-- [Sine](https://github.com/CosmoCreeper/Sine) installed in that browser
-- No other mods are required. Group colors, group icons and the collapse animation are
-  all handled here. This mod does not try to detect or coordinate with any other mod
-  that also styles tab groups (e.g. Advanced Tab Groups) — running one alongside it
-  means the two style groups independently and may visibly disagree.
+- [Sine](https://github.com/CosmoCreeper/Sine), the community mod manager for Zen and Firefox-based browsers
 
----
+> [!NOTE]
+> This is a Sine mod because its sorting logic requires JavaScript. Zen's native Mods Registry only loads CSS and preferences.
 
 ## Installation
+Open `about:preferences#sineMods` in Zen, then choose one of the following methods:
 
-Open **`about:preferences#sineMods`** in Zen.
+### Sine store
+Search for **Zen Tabs Organiser** in the Sine marketplace and select **Install**.
 
-### From the Sine store
-
-Search for **Zen Tabs Organiser** in the marketplace list and click **Install**.
-
-### From this repository
-
-1. Turn on **"Enable installing JS from unofficial sources"** in Sine's settings
-   (`sine.allow-unsafe-js`). Sine silently skips the scripts of any mod that is not from
-   its official store until this is enabled — the styling would load but no buttons would appear.
-2. In **Installation** → *"or, add your own locally from a GitHub repo"*, paste:
+### GitHub repository
+1. In Sine's settings, enable **Install JS from unofficial sources** (`sine.allow-unsafe-js`).
+2. Under **Installation**, find **Add your own locally from a GitHub repo**.
+3. Paste the repository identifier:
 
    ```
    alexiscrocilla/Zen-Tabs-Organiser
    ```
 
-3. Click **Install**.
+4. Select **Install**.
 
----
+If the unsafe-JS option is disabled, Sine may load the styles but silently skip the script, so the **Sort** and **Clear** buttons will not appear.
 
-## AI Configuration
+## Quick Start
+1. Open several tabs in the same Zen workspace.
+2. Select **Sort** in the sidebar.
+3. Expand or collapse the generated groups as needed.
+4. Select **Clear** to close loose, unpinned tabs in the active workspace.
 
-By default, grouping is **domain-based** — no network access at all.
+When multiple tabs are selected, **Sort** processes only that selection. Otherwise, it reorganizes all eligible tabs in the active workspace.
 
-### On device, no API key
+## Grouping Modes
+Configure the mod from `about:preferences#sineMods` → **Zen Tabs Organiser** → **Settings**.
 
-Pick **Local — Firefox AI** as the provider and that is the whole setup. It runs
-`Mozilla/smart-tab-embedding` to cluster tabs by meaning and
-`Mozilla/smart-tab-topic` to name each cluster, both through Firefox's own ML engine.
-Tab titles never leave the browser.
+| Provider | Data handling | API key | Default model |
+|----------|---------------|---------|---------------|
+| None | Groups locally by keywords and domains | No | Not applicable |
+| Local - Firefox AI | Runs Firefox's Smart Tab Grouping models on device | No | Mozilla-provided models |
+| Gemini | Sends tab titles and URLs to Google | Yes | `gemini-2.0-flash` |
+| Ollama | Sends tab titles and URLs to your configured Ollama endpoint | No | `llama3.2` |
+| Mistral | Sends tab titles and URLs to Mistral | Yes | `mistral-small-latest` |
+| OpenAI | Sends tab titles and URLs to OpenAI or a compatible endpoint | Yes | `gpt-4o-mini` |
 
-Two things worth knowing:
+### Private local AI
+Choose **Local - Firefox AI, no API key** to group tabs by meaning without sending tab data to a cloud provider. Firefox downloads the required models on the first run, so the initial sort can take longer.
 
-- The models are downloaded the first time you sort, so that run is slower than the rest.
-- The engine will not start unless `browser.ml.enable` is on, which the mod turns on
-  for you the first time you choose this provider — never before.
+The mod enables `browser.ml.enable` when this provider is selected. If local AI is unavailable or cannot form groups, sorting falls back to local domain-based grouping.
 
-If a cluster ends up close to a group you already have, it joins that group
-rather than creating a near-duplicate beside it.
+### Cloud or self-hosted AI
+Choose a provider, enter its API key when required, and optionally override the model or endpoint. Settings are read each time you select **Sort**, so changes apply without restarting Zen.
 
-### Through a cloud provider
+## Settings
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Show Sort button | On | Displays the sidebar sorting action |
+| Show Clear button | On | Displays the loose-tab cleanup action |
+| Auto-assign colors | On | Gives each group a persistent color |
+| Auto-assign icons | On | Adds a contextual icon to each group |
+| Minimum tabs per group | `2` | Prevents undersized groups from being created |
+| AI provider | None | Selects local, on-device, cloud, or self-hosted grouping |
+| API key | Empty | Used by Gemini, Mistral, and OpenAI |
+| Model | Provider default | Overrides the provider's default model |
+| Endpoint | Provider default | Overrides the Ollama or OpenAI-compatible endpoint |
 
-To use a hosted model instead:
+## Behavior and Privacy
+- Full-workspace **Sort** ignores pinned tabs, Zen folders, split views, empty tabs, and browser-internal pages.
+- **Clear** keeps the selected tab, pinned tabs, grouped tabs, folder tabs, and split-view tabs.
+- Only tabs in the active workspace are sorted or cleared.
+- With **None** or **Local - Firefox AI**, tab titles and URLs do not leave the browser.
+- With a cloud or self-hosted provider, tab titles and URLs are sent to the endpoint you configure.
 
-1. Open **`about:preferences#sineMods`** → **Zen Tabs Organiser** → the settings (gear) button
-2. Pick an **AI provider** (Gemini, Ollama, Mistral, or OpenAI)
-3. Enter your **API key** (not needed for local Ollama)
-4. Optionally set a custom **model** name (defaults: `gpt-4o-mini`, `gemini-2.0-flash`, etc.)
+## Troubleshooting
+### The buttons do not appear
+Confirm that Sine is installed and that `sine.allow-unsafe-js` is enabled for repository installations. Then disable and re-enable the mod in Sine.
 
-Tab titles and URLs are sent to the provider you select. With **None** or **Local —
-Firefox AI**, nothing leaves the browser.
+### The first local-AI sort is slow
+Firefox downloads its Smart Tab Grouping models on first use. Later sorts reuse the downloaded models.
 
-Settings apply immediately — the mod reads its preferences at the moment you press Sort,
-never caching them at load time.
+### Group styles conflict with another mod
+Zen Tabs Organiser styles groups independently. Another mod that changes tab-group colors, icons, or geometry can produce conflicting results; disable one of the overlapping group-style mods.
 
----
+## Development
+Clone the repository and install the local checkout through Sine while developing:
 
-## Usage
-
-1. Click **Sort** — tabs are analyzed and grouped
-2. With AI: titles and URLs are sent to the provider for semantic categories
-3. Without AI: grouping uses keywords / hostnames
-4. Groups get colors and icons according to your settings
-5. **Clear** closes ungrouped, unpinned tabs
-
----
-
-## Repository Files
+```bash
+git clone https://github.com/alexiscrocilla/Zen-Tabs-Organiser.git
+```
 
 | File | Purpose |
 |------|---------|
-| `theme.json` | Sine manifest (metadata, `style`, `scripts`, `preferences`) |
-| `zen-tabs-organiser.uc.js` | Main logic, injected by Sine into `chrome://browser/content/browser.xhtml` |
-| `chrome.css` | Styles for groups, buttons and animations |
-| `preferences.json` | Preference schema shown in the Sine mod settings dialog |
+| `theme.json` | Sine manifest and mod metadata |
+| `zen-tabs-organiser.uc.js` | Sorting, grouping, persistence, and cleanup logic |
+| `chrome.css` | Sidebar controls, group styling, and animations |
+| `preferences.json` | Settings schema displayed by Sine |
 
----
+Sine injects the `.uc.js` script into `chrome://browser/content/browser.xhtml`. Keep runtime behavior in the script, visual rules in `chrome.css`, and ensure every added listener, observer, timer, or DOM node is removed by the unload handler.
 
-## Notes for Contributors
+## Contributing
+Bug reports and focused pull requests are welcome. Before opening a pull request:
+1. Test sorting with no AI provider and with any provider affected by your change.
+2. Verify both full-workspace and multi-selected-tab sorting.
+3. Confirm that pinned tabs, folders, split views, and inactive workspaces remain untouched.
+4. Toggle the mod off and on without restarting Zen to verify cleanup and reinjection.
 
-- Sine only injects files whose name ends in `.uc.js`, `.uc.mjs` or `.sys.mjs`, and only
-  those declared under `scripts` in `theme.json`.
-- The script registers `window.addUnloadListener(destroy)`, which is what makes
-  `"supportsUnload": true` meaningful: Sine calls it before re-injecting or removing the mod.
-  Anything the script adds — buttons, commands, `gZenWorkspaces` hooks, observers,
-  timers — must be undone there.
-- The script may be injected into a window that already has it. It bails out early when
-  `window.ZenTabsOrganiser.loaded` is set.
-- Styles belong in `chrome.css`, not in an injected `<style>` element: Sine loads and
-  unloads that file with the mod.
-- The group header is a Zen `<vbox>`, which stacks vertically. It needs an explicit
-  `flex-direction: row` or an injected icon lands above the title instead of beside it.
-- A group header is sized to match a tab row, by mirroring the two rules Firefox uses
-  for one: `.tab-background` (`--tab-min-height`, `--tab-margin-block`,
-  `--tab-border-radius`) and `.tab-content` (`--tab-inline-padding`). Firefox otherwise
-  pins group labels to `--tab-group-label-height`, which is `--tab-min-height` minus
-  14px, so headers render visibly shorter than tabs unless that is undone.
-- Zero the header's block padding. Firefox pads it asymmetrically, and only while the
-  group is open, to make room for the group line it draws under the label
-  (`tab-group:not([collapsed]) > & { padding-block-end: var(--space-small) }`). That
-  padding adds to `min-height`, so an open group renders taller than a closed one with
-  its contents pushed up, while a closed one sits centred.
-- Centre the label text the way Firefox does — by making the line box as tall as the row
-  (`line-height`) — rather than by relying on the container's `align-items` or the auto
-  block margins Firefox also sets, either of which a theme can disturb. Raising the
-  label's `min-height` is not the same thing: its box fills the row while the text stays
-  at the top of it.
-- A group's painted box lines up with an ordinary tab's on both edges. Zen insets a tab's
-  visible box with `.tab-background { margin-inline: var(--tab-margin-block) }`, and
-  separately indents a group's direct children by `--space-medium`. Only the first is
-  wanted; the indent is dropped so a group starts where a tab starts. The group's own tabs
-  then sit that inset inside its background, which is what makes the tint read as holding
-  them.
-- The injected icon carries Firefox's own `tab-icon-image` class alongside this mod's.
-  That class is styled by an unscoped rule giving it 16x16 and
-  `margin-inline-end: var(--tab-icon-end-margin)`, so size and the gap before the title
-  are inherited rather than restated — a theme like Nebula that restyles favicons
-  restyles this too. The `zto-` class only carries colour — and one
-  `visibility: visible !important`, because that same inherited class also brings
-  `.tab-icon-image:not([fadein]) { visibility: hidden }`, and an icon no tab owns never
-  gets a `[fadein]` attribute. Measured: exact parity with a
-  tab on row height, icon size, icon x and title x, and that parity holds when a theme
-  changes `--tab-min-height` or the favicon size.
-- Group icons this mod injects itself are persisted in SessionStore (`zenTidyIcons`,
-  keyed by group id) and restored at startup, mirroring how colours are handled —
-  without it, the icon existed only in DOM Zen rebuilds from the session on every
-  restart, so it stayed gone until the next Sort.
-- A group's corners are matched to a tab's by measuring, not by naming a variable.
-  A theme need not route its radius through `--tab-border-radius` — Nebula paints
-  `.tab-background` directly, `!important`, with a variable of its own — so the script
-  reads the radius a real tab actually computes to and publishes it as
-  `--zto-tab-radius`. `chrome.css` falls back to `--tab-border-radius` for the moment
-  before that runs. Read one corner, not the `border-radius` shorthand, which resolves
-  to several values as soon as the corners differ and would be nonsense inside the
-  `<r> <r> 0 0` the header needs. The value is re-read after every Sort and whenever
-  Zen rebuilds its tab containers, so a theme installed after startup is picked up
-  without a restart.
-- Group colours all derive from `--tab-group-color`. The `--zto-*` tint values at the top
-  of the design block in `chrome.css` are the only knobs for tint and text; label text is
-  the group colour mixed most of the way to the normal tab text colour, which keeps it
-  legible on either theme without a second rule. Measured contrast against the composed
-  background: 8.7:1.
-- Group appearance is applied unconditionally, with no attempt to detect or coordinate
-  with any other mod that also styles tab groups. An earlier version gated the whole
-  design behind a preference synced from `globalThis.advancedTabGroups`, deferring to
-  Advanced Tab Groups when it was running — but that coordination scheme was what caused
-  colours and icons to visibly flash in on restart (see below), so it was removed.
-- Group color is keyed by group id and persisted, never derived from a position in a list.
-  The map is rebuilt from DOM order on every sort, so an index-based color changes under
-  the same group.
-- The group design is paint only — background and gradient — never geometry. No border,
-  margin or padding override on a group's boxes: a `border-inline-start: 3px` shifts the
-  content 3px and the whole group visibly misaligns against loose tabs.
-- Firefox resolves a group's colour through `var(--tab-group-<code>)`, written by its
-  `set color(code)` setter. Publishing a palette entry under a guessed name is fragile —
-  one release used `--tab-group-color-<code>`, which Firefox 154 never reads, and every
-  group came out grey. Set `--tab-group-color` and friends directly on the element instead.
-- Animate `transform` and `opacity`; they skip layout and paint. Keep UI motion under 300ms,
-  and scope every transition to the element that needs it — a transition on
-  `.tabbrowser-tab` applies to every tab in the browser, forever.
-- Two things must never be styled or scripted, the same two Advanced Tab Groups skips:
-  `<zen-folder>`, which Zen lays out and animates itself, and `tab-group[split-view-group]`,
-  whose tabs must stay put. Every selector is anchored on
-  `tab-group:not([split-view-group])` with child combinators, because Zen nests groups,
-  folders and split views inside one another and a descendant selector leaks into all of them.
-- Never hide `.zen-tab-group-start`. It looks like a decorative divider but it is the
-  layout anchor Zen animates (`marginTop`) to collapse a folder; `display: none` removes
-  its margin box and silently breaks collapsing for every folder in the browser.
-- A user sheet's `!important` outranks both inline styles and the Web Animations API, so
-  an over-broad `!important` here disables Zen's own animations rather than merely restyling them.
-- Collapsing a plain tab group is this mod's job. Firefox hides collapsed tabs with
-  `tab-group[collapsed] > .tabbrowser-tab`, a child combinator, and Zen's tabgroup patch
-  moves the tabs into `.tab-group-container`, so the native rule never matches. Zen only
-  animates its own folders.
-
----
-
-## Migrating from the Zen mod format
-
-Earlier versions of this repository shipped `mod.json`, `chrome.js` and `style.css` for
-Zen's Mods Registry. Those became `theme.json`, `zen-tabs-organiser.uc.js` and `chrome.css`.
-Preference names are unchanged, so existing settings carry over. If you had the old version
-installed through Zen, remove it there before installing this one so the two do not both
-add buttons.
-
----
-
-## Publishing to the Sine store
-
-The Sine marketplace is curated. Submit through the issue template in the [Sine repository](https://github.com/CosmoCreeper/Sine),
-which maps a mod ID to its GitHub repository in the [store](https://github.com/sineorg/store).
-
----
+## Migrating from the Zen Mod Format
+Older releases used `mod.json`, `chrome.js`, and `style.css`. Remove the old version from Zen's Mods Registry before installing the Sine version to prevent duplicate controls. Existing preference names are unchanged.
 
 ## License
-
-[MIT](LICENSE)
+Licensed under the [MIT License](LICENSE).
