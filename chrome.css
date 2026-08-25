@@ -3,23 +3,16 @@
    sine-mods/chrome.css bundle and loads it as a user sheet. */
 
 /* ================================================================
-   HOW GROUP APPEARANCE IS DIVIDED
+   GROUP APPEARANCE
 
-   Advanced Tab Groups and this mod both want to style tab groups,
-   and both load as Sine user sheets — so whichever loads last wins
-   every tie. Restyling groups unconditionally meant this mod made
-   ATG look worse; removing the styling altogether left plain,
-   characterless groups when ATG is off.
+   This mod owns how groups look, unconditionally — it does not try
+   to detect or coordinate with any other mod that also styles tab
+   groups. If one happens to also be installed, the two style groups
+   independently and may visibly disagree; that trade-off was chosen
+   over the latency and flash-of-unstyled-content that coordinating
+   with another Sine script's own load timing caused.
 
-   So the group design below is gated on whether ATG is running.
-   The script sets `zen-tabs-organiser.atg_active` from
-   `globalThis.advancedTabGroups`, and the whole block is behind a
-   `@media not (-moz-bool-pref: ...)` query. ATG on: ATG owns the
-   look. ATG off: this mod styles groups itself, and depends on
-   nothing ATG builds. The pref persists, so there is no flash of
-   the wrong style after the first run.
-
-   Two rules for anything added later:
+   Two rules for anything added here:
    - Anchor on `tab-group:not([split-view-group])` with child
      combinators. Zen nests groups, folders and split views inside
      one another, and a descendant selector leaks into all of them.
@@ -53,9 +46,8 @@
    returns early on `!group.isZenFolder`.
 
    So a plain tab group has nothing hiding its tabs unless a mod
-   supplies it. ATG does; this is the same rule, kept so the mod
-   still collapses if ATG is disabled. The active tab stays visible,
-   matching both the native rule and ATG.
+   supplies it, which is what the rules below do. The active tab
+   stays visible, matching Firefox's own native rule.
 
    The expanded baseline is gated behind :not([collapsed]) on
    purpose: an unconditional `max-height/opacity !important` on tabs
@@ -104,7 +96,7 @@ tab-group:not([split-view-group]) > .tab-group-container {
 
 
 /* ================================================================
-   The collapsed-group chip — neutralised whether or not ATG is on.
+   The collapsed-group chip.
 
    Firefox 154 draws the label of a collapsed group as a chip:
 
@@ -117,7 +109,7 @@ tab-group:not([split-view-group]) > .tab-group-container {
    That outline is invisible until --tab-group-color actually resolves,
    which only happens because this mod sets it — so this mod owns the
    consequence. It reads as a stray square around the group name, and
-   neither this design nor ATG's wants it.
+   this design does not want it either.
    ================================================================ */
 tab-group:not([split-view-group])[collapsed] > .tab-group-label-container .tab-group-label {
   outline: none !important;
@@ -127,12 +119,7 @@ tab-group:not([split-view-group])[collapsed] > .tab-group-label-container .tab-g
 }
 
 /* ================================================================
-   GROUP DESIGN — applied only while Advanced Tab Groups is off.
-
-   Advanced Tab Groups is optional and is NOT installed by this mod.
-   When it happens to be running it owns the look, so this whole
-   block steps aside; on its own, this mod styles groups itself and
-   uses no variable and no element that ATG creates.
+   GROUP DESIGN
 
    All of the colour is derived from --tab-group-color, which the
    script sets on the element. The five values below are the only
@@ -144,115 +131,113 @@ tab-group:not([split-view-group])[collapsed] > .tab-group-label-container .tab-g
    background gradient rather than a border-inline-start, because a
    border pushes the content sideways and the group visibly shifts.
    ================================================================ */
-@media not (-moz-bool-pref: "zen-tabs-organiser.atg_active") {
 
-  tab-group:not([split-view-group]) {
-    /* Header reads a shade stronger than the body, so the group has a
-       head and a tail rather than being one flat slab. */
-    --zto-header-tint: color-mix(in srgb, var(--tab-group-color, gray) 20%, transparent);
-    --zto-body-tint: color-mix(in srgb, var(--tab-group-color, gray) 10%, transparent);
-    --zto-hover-tint: color-mix(in srgb, var(--tab-group-color, gray) 30%, transparent);
-    --zto-rail: color-mix(in srgb, var(--tab-group-color, gray) 75%, transparent);
+tab-group:not([split-view-group]) {
+  /* Header reads a shade stronger than the body, so the group has a
+     head and a tail rather than being one flat slab. */
+  --zto-header-tint: color-mix(in srgb, var(--tab-group-color, gray) 20%, transparent);
+  --zto-body-tint: color-mix(in srgb, var(--tab-group-color, gray) 10%, transparent);
+  --zto-hover-tint: color-mix(in srgb, var(--tab-group-color, gray) 30%, transparent);
+  --zto-rail: color-mix(in srgb, var(--tab-group-color, gray) 75%, transparent);
 
-    /* Text is the group's colour pulled most of the way to the normal
-       tab text colour: tinted enough to belong, contrasted enough to
-       read, and it follows a light theme without a second rule. */
-    --zto-label-text: color-mix(in srgb, var(--tab-group-color, gray) 25%,
-                                var(--tab-selected-textcolor, currentColor));
+  /* Text is the group's colour pulled most of the way to the normal
+     tab text colour: tinted enough to belong, contrasted enough to
+     read, and it follows a light theme without a second rule. */
+  --zto-label-text: color-mix(in srgb, var(--tab-group-color, gray) 25%,
+                              var(--tab-selected-textcolor, currentColor));
 
-    /* Rail drawn in the background layer: costs no horizontal space. */
-    --zto-rail-image: linear-gradient(to right, var(--zto-rail) 0 3px, transparent 3px);
+  /* Rail drawn in the background layer: costs no horizontal space. */
+  --zto-rail-image: linear-gradient(to right, var(--zto-rail) 0 3px, transparent 3px);
+}
+
+/* --- Header --- */
+tab-group:not([split-view-group]) > .tab-group-label-container {
+  /* Zen declares this as a <vbox>, which stacks vertically. Without this
+     the injected icon lands above the title instead of beside it. */
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  background-color: var(--zto-header-tint) !important;
+  background-image: var(--zto-rail-image) !important;
+  background-repeat: no-repeat !important;
+  border-radius: var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) 0 0 !important;
+  transition:
+    background-color var(--zto-enter) var(--zto-ease-out),
+    border-radius var(--zto-enter) var(--zto-ease-out) !important;
+  animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) backwards;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  tab-group:not([split-view-group]) > .tab-group-label-container:hover {
+    background-color: var(--zto-hover-tint) !important;
   }
+}
 
-  /* --- Header --- */
-  tab-group:not([split-view-group]) > .tab-group-label-container {
-    /* Zen declares this as a <vbox>, which stacks vertically. Without this
-       the injected icon lands above the title instead of beside it. */
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    background-color: var(--zto-header-tint) !important;
-    background-image: var(--zto-rail-image) !important;
-    background-repeat: no-repeat !important;
-    border-radius: var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) 0 0 !important;
-    transition:
-      background-color var(--zto-enter) var(--zto-ease-out),
-      border-radius var(--zto-enter) var(--zto-ease-out) !important;
-    animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) backwards;
-  }
+tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label {
+  background: transparent !important;
+  color: var(--zto-label-text) !important;
+  font-weight: 600 !important;
+  margin-inline-end: auto !important;
+  min-width: 0 !important;
+  /* The gap before the title is owned by the icon's margin, so the title
+     lands where tab titles do whatever --tab-group-label-padding is. */
+  padding-inline-start: 0 !important;
+}
 
-  @media (hover: hover) and (pointer: fine) {
-    tab-group:not([split-view-group]) > .tab-group-label-container:hover {
-      background-color: var(--zto-hover-tint) !important;
-    }
-  }
+/* --- Body: the tint continues, lighter, under the tabs --- */
+tab-group:not([split-view-group]) > .tab-group-container {
+  background-color: var(--zto-body-tint) !important;
+  background-image: var(--zto-rail-image) !important;
+  background-repeat: no-repeat !important;
+  border-radius: 0 0 var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) !important;
+  transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
+  animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) 60ms backwards;
+}
 
-  tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label {
-    background: transparent !important;
-    color: var(--zto-label-text) !important;
-    font-weight: 600 !important;
-    margin-inline-end: auto !important;
-    min-width: 0 !important;
-    /* The gap before the title is owned by the icon's margin, so the title
-       lands where tab titles do whatever --tab-group-label-padding is. */
-    padding-inline-start: 0 !important;
-  }
+/* Closed: the header becomes a standalone pill. */
+tab-group:not([split-view-group])[collapsed] > .tab-group-label-container {
+  border-radius: var(--border-radius-medium, 6px) !important;
+}
 
-  /* --- Body: the tint continues, lighter, under the tabs --- */
-  tab-group:not([split-view-group]) > .tab-group-container {
-    background-color: var(--zto-body-tint) !important;
-    background-image: var(--zto-rail-image) !important;
-    background-repeat: no-repeat !important;
-    border-radius: 0 0 var(--border-radius-medium, 6px) var(--border-radius-medium, 6px) !important;
-    transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
-    animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) 60ms backwards;
-  }
+tab-group:not([split-view-group])[collapsed] > .tab-group-container {
+  background-color: transparent !important;
+  background-image: none !important;
+}
 
-  /* Closed: the header becomes a standalone pill. */
-  tab-group:not([split-view-group])[collapsed] > .tab-group-label-container {
-    border-radius: var(--border-radius-medium, 6px) !important;
-  }
+tab-group:not([split-view-group])[collapsed] {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 
-  tab-group:not([split-view-group])[collapsed] > .tab-group-container {
-    background-color: transparent !important;
-    background-image: none !important;
-  }
+/* --- Icon injected by this mod --- */
+/* Sized and placed to land exactly where a tab's favicon does, using the
+   same variable Zen uses for tab padding, so it tracks tab density. */
+.zto-group-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-inline: var(--tab-inline-padding, 8px) 8px;
+  flex: none;
+}
 
-  tab-group:not([split-view-group])[collapsed] {
-    outline: none !important;
-    border: none !important;
-    box-shadow: none !important;
-  }
+.zto-group-icon {
+  box-sizing: border-box;   /* 16px overall, like a favicon */
+  width: 16px;
+  height: 16px;
+  padding: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--tab-group-color, gray) 85%, transparent);
+  /* Zen's selectable icons paint with context-fill; declare the same set
+     the rest of the browser does or the glyph comes out black. */
+  -moz-context-properties: fill, stroke, fill-opacity;
+  fill: var(--tab-selected-textcolor, #fff);
+  stroke: var(--tab-selected-textcolor, #fff);
+}
 
-  /* --- Icon injected by this mod when ATG is not there to do it --- */
-  /* Sized and placed to land exactly where a tab's favicon does, using the
-     same variable Zen uses for tab padding, so it tracks tab density. */
-  .zto-group-icon-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-inline: var(--tab-inline-padding, 8px) 8px;
-    flex: none;
-  }
-
-  .zto-group-icon {
-    box-sizing: border-box;   /* 16px overall, like a favicon */
-    width: 16px;
-    height: 16px;
-    padding: 3px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--tab-group-color, gray) 85%, transparent);
-    /* Zen's selectable icons paint with context-fill; declare the same set
-       the rest of the browser does or the glyph comes out black. */
-    -moz-context-properties: fill, stroke, fill-opacity;
-    fill: var(--tab-selected-textcolor, #fff);
-    stroke: var(--tab-selected-textcolor, #fff);
-  }
-
-  /* Zen draws its own group line; the rail above replaces it. */
-  tab-group:not([split-view-group]) > .tab-group-line {
-    display: none !important;
-  }
+/* Zen draws its own group line; the rail above replaces it. */
+tab-group:not([split-view-group]) > .tab-group-line {
+  display: none !important;
 }
 
 @keyframes zenGroupAppear {

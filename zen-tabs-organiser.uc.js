@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.2.0';
+    const MOD_VERSION = '3.3.0';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -32,7 +32,6 @@
     const MIN_GROUP_SIZE_PREF  = "zen-tabs-organiser.min_group_size";
     const AUTO_ICONS_PREF      = "zen-tabs-organiser.auto_icons";
     const AUTO_COLORS_PREF     = "zen-tabs-organiser.auto_colors";
-    const ATG_ACTIVE_PREF      = "zen-tabs-organiser.atg_active";   // set by this script, read by chrome.css
 
     // --- Helper: read preferences ---
     const getPref = (prefName, defaultValue = "") => {
@@ -62,7 +61,6 @@
     ensureBoolPref(ENABLE_CLEAR_PREF, true);
     ensureBoolPref(AUTO_ICONS_PREF, true);
     ensureBoolPref(AUTO_COLORS_PREF, true);
-    ensureBoolPref(ATG_ACTIVE_PREF, false);
 
     // --- Ensure int prefs exist ---
     const ensureIntPref = (pref, val) => {
@@ -82,34 +80,6 @@
     const minGroupSize = () => parseInt(getPref(MIN_GROUP_SIZE_PREF, "2"), 10) || 2;
     const autoIcons    = () => !!getPref(AUTO_ICONS_PREF, true);
     const autoColors   = () => !!getPref(AUTO_COLORS_PREF, true);
-
-    // --- Advanced Tab Groups detection ---
-    // Both mods style tab groups and both load as Sine user sheets, so
-    // whichever loads last wins every tie. Rather than fight, chrome.css puts
-    // its whole group design behind
-    //     @media not (-moz-bool-pref: "zen-tabs-organiser.atg_active")
-    // and this keeps that pref in sync with reality. The pref persists, so a
-    // restart applies the right design immediately instead of flashing the
-    // wrong one while ATG loads.
-    const atgInstance = () => globalThis.advancedTabGroups;
-
-    const syncAtgPref = () => {
-        const present = typeof atgInstance() !== 'undefined';
-        try {
-            if (getPref(ATG_ACTIVE_PREF, false) !== present) {
-                Services.prefs.setBoolPref(ATG_ACTIVE_PREF, present);
-                console.log(`[ZenTabsOrganiser] Advanced Tab Groups ${present ? 'detected' : 'not present'}`);
-            }
-        } catch {}
-        return present;
-    };
-
-    // ATG is a separate Sine script; load order between the two is not
-    // guaranteed, so re-check for a while before settling.
-    const watchForAtg = () => {
-        syncAtgPref();
-        [1000, 3000, 8000].forEach(delay => later(syncAtgPref, delay));
-    };
 
     // --- What this mod is allowed to touch ---
     // Advanced Tab Groups skips the same two things, and for good reason:
@@ -1043,11 +1013,9 @@ Output:`;
     }
 
     // --- Icon storage, keyed by group id ---
-    // Advanced Tab Groups persists and restores its own icons at its own
-    // startup (saveGroupIcon / applySavedIcons), so this only needs to cover
-    // the path where ATG is not running: the icon this mod injects itself.
-    // Without it, the icon existed only in a DOM Zen rebuilds from the
-    // session on every restart, so it vanished until the next Sort.
+    // The icon this mod injects lives only in DOM Zen rebuilds from the
+    // session on every restart, so without persisting it separately it
+    // vanished until the next Sort.
     const readSavedIcons = () => {
         try {
             const raw = SessionStore.getCustomWindowValue(window, 'zenTidyIcons');
@@ -1071,14 +1039,15 @@ Output:`;
      * Respects the zen-tabs-organiser.auto_icons preference.
      */
     // Class names for the icon this mod injects itself. Deliberately distinct
-    // from ATG's .tab-group-icon-container so the two can never collide.
+    // from the ".tab-group-icon-container" name other mods commonly use, so
+    // that if one happens to also be installed, the two icons cannot collide.
     const ICON_HOST_CLASS = 'zto-group-icon-container';
     const ICON_CLASS = 'zto-group-icon';
 
     /**
-     * Put an icon in a group's header without Advanced Tab Groups.
-     * ATG does the same thing — a container in the label, holding an <image> —
-     * so when ATG is running we let it own the icon instead of adding a second.
+     * Put an icon in a group's header. This mod owns group icons entirely —
+     * it does not try to detect or defer to any other mod that also styles
+     * groups.
      */
     const applyOwnGroupIcon = (groupEl, iconUrl) => {
         const labelContainer = groupEl.querySelector(':scope > .tab-group-label-container');
@@ -1112,29 +1081,22 @@ Output:`;
 
     function autoAssignIcons(groupElementsMap) {
         if (!autoIcons()) return;
-        const atg = atgInstance();
-        // ATG owns persistence for its own icons; only track ours.
-        const usingOwnIcons = typeof atg === 'undefined';
         const nextIconMap = {};
 
         for (const [label, groupEl] of groupElementsMap) {
             if (!groupEl?.isConnected || !groupEl.id) continue;
 
-            // Respect an icon the user or ATG already put there.
+            // Respect an icon already there — set by hand, or by another mod
+            // this one makes no attempt to detect or coordinate with.
             if (groupEl.querySelector('.tab-group-icon .group-icon, .tab-group-icon label')) continue;
 
             const tabs = Array.from(groupEl.querySelectorAll('tab'));
             const iconUrl = pickIconForGroup(label, tabs);
 
             try {
-                if (usingOwnIcons) {
-                    const applied = applyOwnGroupIcon(groupEl, iconUrl);
-                    nextIconMap[groupEl.id] = iconUrl;
-                    if (applied) {
-                        console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
-                    }
-                } else {
-                    atg.applyGroupIcon(groupEl, iconUrl);
+                const applied = applyOwnGroupIcon(groupEl, iconUrl);
+                nextIconMap[groupEl.id] = iconUrl;
+                if (applied) {
                     console.log(`[ZenTabsOrganiser] Auto-icon: "${label}" → ${iconUrl.split('/').pop()}`);
                 }
             } catch (e) {
@@ -1142,19 +1104,14 @@ Output:`;
             }
         }
 
-        // Only rewritten from live groups this mod iconed itself, so this
-        // also prunes ids that no longer exist — same shape as colours.
-        if (usingOwnIcons) writeSavedIcons(nextIconMap);
+        // Rewritten from live groups every time, so this also prunes ids
+        // that no longer exist — same shape as colours.
+        writeSavedIcons(nextIconMap);
     }
 
-    /**
-     * Re-apply saved icons at startup, before any sort has run.
-     * Skipped when Advanced Tab Groups is present: it restores its own
-     * icons independently, and racing it would risk a duplicate.
-     */
+    /** Re-apply saved icons at startup, before any sort has run. */
     function restoreIcons() {
         if (!autoIcons()) return;
-        if (typeof atgInstance() !== 'undefined') return;
         let restored = 0;
         for (const [groupId, iconUrl] of Object.entries(readSavedIcons())) {
             const group = document.getElementById(groupId);
@@ -1748,14 +1705,42 @@ Output:`;
                         onCleanup(removeOwnGroupIcons);
                         onCleanup(() => { localEngines = null; });
                         setupZenWorkspaceHooks();
-                        watchForAtg();
-                        // A short delay lets the tab strip finish its own layout first
-                        later(restoreColors, 2000);
-                        // Longer: ATG persists and restores its own icons independently,
-                        // and injecting ours first would leave a duplicate icon once ATG's
-                        // own restore runs. watchForAtg's last check lands at 8000ms, so
-                        // this waits for ATG's presence to be as settled as it will get.
-                        later(restoreIcons, 8500);
+
+                        // --- Restore colours and icons once the tab strip settles ---
+                        // Zen's session restore can still be creating tab-group
+                        // elements well after this script starts, especially with
+                        // many tabs. A fixed delay either fires before they exist —
+                        // silently doing nothing, so the group looks unstyled until
+                        // the next Sort — or later than necessary on a light
+                        // session. Instead, wait until the strip stops gaining or
+                        // losing nodes for a short while, with a ceiling so a busy
+                        // session cannot hold this up forever.
+                        {
+                            const SETTLE_MS = 250, CEILING_MS = 6000;
+                            const container = document.getElementById('tabbrowser-arrowscrollbox') || document.body;
+                            let settleTimer = null;
+                            const restoreOnce = () => {
+                                if (destroyed) return;
+                                clearTracked(settleTimer, 'timeout');
+                                clearTracked(ceilingTimer, 'timeout');
+                                observer.disconnect();
+                                restoreColors();
+                                restoreIcons();
+                            };
+                            const observer = new MutationObserver(() => {
+                                clearTracked(settleTimer, 'timeout');
+                                settleTimer = later(restoreOnce, SETTLE_MS);
+                            });
+                            observer.observe(container, { childList: true, subtree: true });
+                            settleTimer = later(restoreOnce, SETTLE_MS);
+                            const ceilingTimer = later(restoreOnce, CEILING_MS);
+                            onCleanup(() => {
+                                observer.disconnect();
+                                clearTracked(settleTimer, 'timeout');
+                                clearTracked(ceilingTimer, 'timeout');
+                            });
+                        }
+
                         console.log('[ZenTabsOrganiser] Setup complete ✓');
                     } catch (e) {
                         console.error('[ZenTabsOrganiser] Setup error:', e);

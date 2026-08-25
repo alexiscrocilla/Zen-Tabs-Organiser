@@ -36,10 +36,10 @@ Inspired by [Arc’s Tidy Tabs](https://arc.net/max).
 
 - [Zen Browser](https://zen-browser.app/)
 - [Sine](https://github.com/CosmoCreeper/Sine) installed in that browser
-- [Advanced Tab Groups](https://github.com/Vertex-Mods/Advanced-Tab-Groups) — **optional**.
-  Everything works without it: group colors, group icons and the collapse animation are
-  all handled here. If you do run it, it takes over how groups look and this mod steps
-  aside, so the two never fight.
+- No other mods are required. Group colors, group icons and the collapse animation are
+  all handled here. This mod does not try to detect or coordinate with any other mod
+  that also styles tab groups (e.g. Advanced Tab Groups) — running one alongside it
+  means the two style groups independently and may visibly disagree.
 
 ---
 
@@ -145,22 +145,17 @@ never caching them at load time.
 - Group icons this mod injects itself are persisted in SessionStore (`zenTidyIcons`,
   keyed by group id) and restored at startup, mirroring how colours are handled —
   without it, the icon existed only in DOM Zen rebuilds from the session on every
-  restart, so it stayed gone until the next Sort. Advanced Tab Groups persists and
-  restores its own icons independently, so the restore here backs off entirely when
-  ATG is detected; racing it would leave two icons on the same group, so it runs late
-  (8.5s in), after ATG's own detection has had time to settle.
+  restart, so it stayed gone until the next Sort.
 - Group colours all derive from `--tab-group-color`. The five `--zto-*` values at the top
   of the design block in `chrome.css` are the only knobs for tint and text; label text is
   the group colour mixed most of the way to the normal tab text colour, which keeps it
   legible on either theme without a second rule. Measured contrast against the composed
   background: 8.7:1.
-- Group appearance is shared with Advanced Tab Groups when it happens to be installed,
-  and both load as Sine user sheets, so whichever loads last wins every tie. The whole
-  group design in `chrome.css` therefore sits behind
-  `@media not (-moz-bool-pref: "zen-tabs-organiser.atg_active")`; the script keeps that
-  pref in sync with `globalThis.advancedTabGroups`. ATG on, ATG owns the look; ATG off,
-  this mod styles groups with nothing ATG builds. Styling groups unconditionally made ATG
-  look worse; dropping the styling left plain groups when ATG is off.
+- Group appearance is applied unconditionally, with no attempt to detect or coordinate
+  with any other mod that also styles tab groups. An earlier version gated the whole
+  design behind a preference synced from `globalThis.advancedTabGroups`, deferring to
+  Advanced Tab Groups when it was running — but that coordination scheme was what caused
+  colours and icons to visibly flash in on restart (see below), so it was removed.
 - Group color is keyed by group id and persisted, never derived from a position in a list.
   The map is rebuilt from DOM order on every sort, so an index-based color changes under
   the same group.
