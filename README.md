@@ -85,6 +85,7 @@ Choose a provider, enter its API key when required, and optionally override the 
 ## Behavior and Privacy
 - Full-workspace **Sort** ignores pinned tabs, existing groups, Zen folders, split views, empty tabs, and browser-internal pages.
 - Existing groups are never changed by **Sort**; loose tabs that receive an existing group's label are placed in a new numbered group.
+- Right-click a group header to rename it or choose a custom icon using Zen's native folder menu.
 - **Clear** keeps the selected tab, pinned tabs, grouped tabs, folder tabs, and split-view tabs.
 - Only tabs in the active workspace are sorted or cleared.
 - With **None** or **Local - Firefox AI**, tab titles and URLs do not leave the browser.

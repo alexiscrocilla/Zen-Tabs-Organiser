@@ -1122,6 +1122,12 @@ Output:`;
         for (const [label, groupEl] of groupElementsMap) {
             if (!groupEl?.isConnected || !groupEl.id) continue;
 
+            if (groupEl.hasAttribute('data-zto-manual-icon')) {
+                const icon = groupEl.querySelector(`.${ICON_HOST_CLASS}`)?.getAttribute('data-zto-icon');
+                if (icon) nextIconMap[groupEl.id] = icon;
+                continue;
+            }
+
             // Respect an icon already there — set by hand, or by another mod
             // this one makes no attempt to detect or coordinate with.
             if (groupEl.querySelector('.tab-group-icon .group-icon, .tab-group-icon label')) continue;
@@ -1153,6 +1159,7 @@ Output:`;
             const group = document.getElementById(groupId);
             if (group?.isConnected) {
                 try {
+                    group.setAttribute('data-zto-manual-icon', 'true');
                     if (applyOwnGroupIcon(group, iconUrl)) restored++;
                 } catch (e) {
                     console.warn(`[ZenTabsOrganiser] Failed to restore icon for "${groupId}":`, e);
@@ -1160,6 +1167,87 @@ Output:`;
             }
         }
         if (restored > 0) console.log(`[ZenTabsOrganiser] Restored ${restored} group icons from session`);
+    }
+
+    const markGroupIconManual = (group, iconUrl) => {
+        group.setAttribute('data-zto-manual-icon', 'true');
+        applyOwnGroupIcon(group, iconUrl);
+        const saved = readSavedIcons();
+        saved[group.id] = iconUrl;
+        writeSavedIcons(saved);
+    };
+
+    const groupFromContextTarget = (target) => {
+        const group = target?.closest?.(GROUP_SELECTOR);
+        if (!group || !target.closest('.tab-group-label-container')) return null;
+        return group;
+    };
+
+    function setupGroupContextMenu() {
+        const menu = document.getElementById('zenFolderActions');
+        if (!menu) return;
+
+        let contextGroup = null;
+        const onContextMenu = (event) => {
+            const group = groupFromContextTarget(event.target);
+            if (!group) return;
+            const labelContainer = group.querySelector(':scope > .tab-group-label-container');
+            if (labelContainer) labelContainer.setAttribute('context', 'zenFolderActions');
+        };
+        const onPopupShowing = (event) => {
+            if (event.target !== menu) return;
+            contextGroup = groupFromContextTarget(event.explicitOriginalTarget);
+        };
+        const onPopupHidden = (event) => {
+            if (event.target === menu) contextGroup = null;
+        };
+        const onCommand = (event) => {
+            if (!contextGroup) return;
+            const group = contextGroup;
+            if (event.target.id === 'context_zenFolderRename') {
+                const label = group.querySelector('.tab-group-label');
+                if (!label || typeof gZenVerticalTabsManager?.renameTabStart !== 'function') return;
+                const previous = label.onRenameFinished;
+                label.onRenameFinished = newLabel => {
+                    const value = newLabel.trim() || 'Group';
+                    group.setAttribute('label', value);
+                    try { group.label = value; } catch {}
+                    if (previous) label.onRenameFinished = previous;
+                };
+                gZenVerticalTabsManager.renameTabStart({ target: label, explicit: true });
+            } else if (event.target.id === 'context_zenFolderChangeIcon') {
+                const anchor = group.querySelector(`.${ICON_HOST_CLASS}`) ||
+                    group.querySelector('.tab-group-label-container');
+                if (typeof gZenEmojiPicker === 'undefined' || typeof gZenEmojiPicker.open !== 'function' || !anchor) return;
+                gZenEmojiPicker.open(anchor, {
+                    onlySvgIcons: true,
+                    allowNone: Boolean(anchor.getAttribute('data-zto-icon')),
+                    closeOnSelect: false,
+                    onSelect: icon => {
+                        if (icon) markGroupIconManual(group, icon);
+                        else {
+                            group.removeAttribute('data-zto-manual-icon');
+                            const host = group.querySelector(`.${ICON_HOST_CLASS}`);
+                            if (host) host.remove();
+                            const saved = readSavedIcons();
+                            delete saved[group.id];
+                            writeSavedIcons(saved);
+                        }
+                    },
+                });
+            }
+        };
+
+        document.addEventListener('contextmenu', onContextMenu, true);
+        menu.addEventListener('popupshowing', onPopupShowing);
+        menu.addEventListener('popuphidden', onPopupHidden);
+        menu.addEventListener('command', onCommand);
+        onCleanup(() => {
+            document.removeEventListener('contextmenu', onContextMenu, true);
+            menu.removeEventListener('popupshowing', onPopupShowing);
+            menu.removeEventListener('popuphidden', onPopupHidden);
+            menu.removeEventListener('command', onCommand);
+        });
     }
 
     // ==========================================
@@ -1730,6 +1818,7 @@ Output:`;
                     try {
                         removeLegacyStyleElement();
                         setupCommandsAndListener();
+                        setupGroupContextMenu();
                         addButtonsToAllSeparators();
                         onCleanup(removeButtonsAndHosts);
                         onCleanup(removeOwnGroupIcons);
