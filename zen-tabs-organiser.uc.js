@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        2.8.0
+// @version        3.6.0
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.5.4';
+    const MOD_VERSION = '3.6.0';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1198,13 +1198,14 @@ Output:`;
                 initialTabs = selectedTabs.filter(tab =>
                     tab.getAttribute('zen-workspace-id') === currentWorkspaceId &&
                     !tab.pinned && !tab.hasAttribute('zen-empty-tab') && tab.isConnected &&
-                    !isForeignContainer(tab.closest('tab-group, zen-folder'))
+                    !isForeignContainer(tab.closest('tab-group, zen-folder')) &&
+                    !ownGroupOf(tab)
                 );
             } else {
-                // Collect ALL tabs first
                 initialTabs = Array.from(gBrowser.tabs).filter(tab => {
                     if (tab.getAttribute('zen-workspace-id') !== currentWorkspaceId) return false;
                     if (tab.pinned || tab.hasAttribute('zen-empty-tab') || !tab.isConnected) return false;
+                    if (ownGroupOf(tab)) return false;
                     // Leave tabs the user already filed in a Zen folder or a split
                     // view where they are; sorting them out would dismantle those.
                     if (isForeignContainer(tab.closest('tab-group, zen-folder'))) return false;
@@ -1309,7 +1310,7 @@ Output:`;
             // --- AI / domain grouping ---
             const tabsForAI = aiEnabled ? initialTabs.filter(t => t.isConnected) : initialTabs.filter(t => !handledTabs.has(t) && t.isConnected);
             let aiTabTopics = [];
-            const allNames = new Set([...allExistingGroupNames, ...Object.keys(preGroups)]);
+            const allNames = new Set(Object.keys(preGroups));
 
             if (tabsForAI.length > 0) {
                 console.log(`[ZenTabsOrganiser] ${tabsForAI.length} tabs for AI/domain analysis`);
@@ -1400,7 +1401,7 @@ Output:`;
                 if (label) existingGroupElements.set(label, el);
             });
 
-            // --- Create / update groups ---
+            // --- Create groups without changing existing ones ---
             const newGroupsToColor = [];
             for (const topic in finalGroups) {
                 const tabsForTopic = finalGroups[topic];
@@ -1409,28 +1410,19 @@ Output:`;
                 const existingEl = existingGroupElements.get(topic);
 
                 if (existingEl?.isConnected) {
-                    // Add to existing group
+                    let groupLabel = `${topic} 2`;
+                    let suffix = 2;
+                    while (existingGroupElements.has(groupLabel)) {
+                        suffix++;
+                        groupLabel = `${topic} ${suffix}`;
+                    }
+                    existingGroupElements.set(groupLabel, null);
                     try {
-                        if (existingEl.getAttribute("collapsed") === "true") {
-                            existingEl.setAttribute("collapsed", "false");
-                            const lbl = existingEl.querySelector('.tab-group-label');
-                            if (lbl) lbl.setAttribute('aria-expanded', 'true');
-                        }
-                        // Collect tabs not already in this group
-                        const tabsToAdd = tabsForTopic.filter(tab =>
-                            tab?.isConnected && ownGroupOf(tab) !== existingEl
-                        );
-                        if (tabsToAdd.length > 0) {
-                            if (typeof existingEl.addTabs === 'function') {
-                                existingEl.addTabs(tabsToAdd);
-                            } else if (typeof gBrowser.moveTabToExistingGroup === 'function') {
-                                for (const tab of tabsToAdd) gBrowser.moveTabToExistingGroup(tab, existingEl);
-                            } else {
-                                console.warn('[ZenTabsOrganiser] No API to move tabs to existing group');
-                            }
-                        }
+                        const opts = { label: groupLabel, color: 'gray', insertBefore: tabsForTopic[0] };
+                        const newGroup = gBrowser.addTabGroup(tabsForTopic, opts);
+                        if (newGroup?.isConnected) newGroupsToColor.push(newGroup);
                     } catch (e) {
-                        console.error(`[ZenTabsOrganiser] Error moving tabs to "${topic}":`, e);
+                        console.error(`[ZenTabsOrganiser] Error creating group "${groupLabel}":`, e);
                     }
                 } else {
                     // Create new group

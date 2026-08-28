@@ -47,7 +47,7 @@ If the unsafe-JS option is disabled, Sine may load the styles but silently skip 
 3. Expand or collapse the generated groups as needed.
 4. Select **Clear** to close loose, unpinned tabs in the active workspace.
 
-When multiple tabs are selected, **Sort** processes only that selection. Otherwise, it reorganizes all eligible tabs in the active workspace.
+When multiple tabs are selected, **Sort** processes only that selection. Otherwise, it sorts loose eligible tabs in the active workspace and leaves existing groups unchanged.
 
 ## Grouping Modes
 Configure the mod from `about:preferences#sineMods` → **Zen Tabs Organiser** → **Settings**.
@@ -83,7 +83,8 @@ Choose a provider, enter its API key when required, and optionally override the 
 | Endpoint | Provider default | Overrides the Ollama or OpenAI-compatible endpoint |
 
 ## Behavior and Privacy
-- Full-workspace **Sort** ignores pinned tabs, Zen folders, split views, empty tabs, and browser-internal pages.
+- Full-workspace **Sort** ignores pinned tabs, existing groups, Zen folders, split views, empty tabs, and browser-internal pages.
+- Existing groups are never changed by **Sort**; loose tabs that receive an existing group's label are placed in a new numbered group.
 - **Clear** keeps the selected tab, pinned tabs, grouped tabs, folder tabs, and split-view tabs.
 - Only tabs in the active workspace are sorted or cleared.
 - With **None** or **Local - Firefox AI**, tab titles and URLs do not leave the browser.
