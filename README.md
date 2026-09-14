@@ -49,6 +49,8 @@ Those rows are all the same shape: a thin rule and a button sharing one line. Pl
 
 Joining a row means inheriting its **Clear** button, so while this mod's Clear is on, the host's own is hidden: Zen's close-unpinned button, or Natsumi's. Turn **Show the Clear button** off in the settings and the host's comes back.
 
+The same goes for the group icon. Natsumi draws a generic folder on every group label; this mod picks one from the group's name and domains — a magnifying glass on *Search*, a code icon on *Development* — so on a group it has given an icon to, the other stands down and its own is painted in the group's full colour. A group the mod has never touched, or any group at all with **Auto-assign icons** off, keeps whatever its own mod draws.
+
 ## Installation
 Open `about:preferences#sineMods`, then choose one of the following methods:
 
