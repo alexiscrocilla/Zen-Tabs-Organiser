@@ -584,11 +584,14 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   #zen-tidy-clear-button { display: none !important; }
 }
 
-/* No rule hiding this row when both buttons are off: it now carries the
-   divider Firefox's splitter stopped painting, so hiding it would leave the
-   sidebar with no separator between the pinned tabs and the list at all. With
-   both buttons off it simply reads as that divider, which is what Firefox
-   showed before this mod was installed. */
+/* With both buttons off the Firefox row holds nothing at all — it draws no
+   rule — so it is a 24px gap under the pinned tabs and nothing else. Zen's
+   separator is Zen's own and stays either way. */
+@media not -moz-pref("zen-tabs-organiser.enable_sort") {
+  @media not -moz-pref("zen-tabs-organiser.enable_clear") {
+    #zen-tidy-host-row { display: none !important; }
+  }
+}
 
 /* ============= Separator host ============= */
 .zen-tidy-host {
@@ -625,26 +628,13 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   flex: none !important;
 }
 
-/* Firefox already draws a divider between the pinned tabs and the tab list:
-   #vertical-pinned-tabs-splitter, a real <splitter> the user drags to resize
-   the pinned area, painted with --sidebar-divider-image. This mod's row draws
-   its own rule so that the rule and the buttons share one line, the way Zen's
-   .pinned-tabs-container-separator does — and the two together read as two
-   separate rows stacked in the sidebar, which is the bug this fixes.
+/* Firefox's own #vertical-pinned-tabs-splitter is left entirely alone. It
+   ships hidden, and even when shown its rule is transparent under
+   #tabbrowser-tabs[expanded] — so while the sidebar is expanded Firefox draws
+   no divider there at all, and the row above adds none either. An earlier
+   version of this file suppressed the splitter's paint to stop the two
+   competing; with no rule of our own there is nothing to compete with. */
 
-   So the splitter's divider steps aside while this row is present. Only the
-   paint goes: min-height stays, so the drag target the user resizes the
-   pinned area with is untouched. Keyed off this row's id, which no Zen window
-   has, and matched through :has() on the parent because the splitter is the
-   row's PREVIOUS sibling and CSS has no previous-sibling combinator. */
-#tabbrowser-tabs:has(> #zen-tidy-host-row) > #vertical-pinned-tabs-splitter {
-  background-image: none !important;
-  border-top: none !important;
-}
-
-#zen-tidy-host-row toolbarseparator {
-  background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)) !important;
-}
 
 /* Hide the native separator line, we draw our own below */
 .zen-tidy-host::before {
@@ -679,10 +669,9 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   50%      { opacity: 1; }
 }
 
-/* The second selector is not redundant: the Firefox row below sets its
-   separator's colour through an id, which would otherwise outrank a class. */
-.zen-tidy-host.separator-is-sorting toolbarseparator,
-#zen-tidy-host-row.separator-is-sorting toolbarseparator {
+/* Zen's separator only: the Firefox row has no rule to pulse. The tabs being
+   sorted still pulse through .tab-is-sorting below. */
+.zen-tidy-host.separator-is-sorting toolbarseparator {
   background-color: #c4a7e7 !important;
   animation: zenSortingPulse 1.2s ease-in-out infinite !important;
 }
@@ -743,11 +732,7 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   }
   .tab-is-sorting .tab-icon-image,
   .tab-is-sorting .tab-label,
-  .zen-tidy-host.separator-is-sorting toolbarseparator,
-  /* The id form is not redundant: the Firefox row's pulse is written with an
-     id, which would otherwise outrank a class here and keep animating for
-     someone who asked the browser to stop moving things. */
-  #zen-tidy-host-row.separator-is-sorting toolbarseparator {
+  .zen-tidy-host.separator-is-sorting toolbarseparator {
     animation: none !important;
   }
 }
