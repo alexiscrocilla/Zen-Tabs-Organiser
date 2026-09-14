@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.7.2
+// @version        3.7.3
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.7.2';
+    const MOD_VERSION = '3.7.3';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1968,17 +1968,18 @@ Output:`;
         let host = document.getElementById(SYNTHETIC_HOST_ID);
         if (!host) {
             try {
-                // No <toolbarseparator> here, unlike Zen's row. Firefox draws
-                // no divider between the pinned tabs and the list while the
-                // sidebar is expanded — #vertical-pinned-tabs-splitter ships
-                // `hidden="true"`, and even shown its rule is
-                // `border-top-color: transparent` under
-                // `#tabbrowser-tabs[expanded]`. A rule of our own is therefore
-                // a line Firefox does not have, and it reads as a second row
-                // stacked under the pinned tabs. Zen genuinely has one, which
-                // is why its separator carries both the rule and the buttons.
+                // The rule and the buttons on one line, the shape Zen's
+                // .pinned-tabs-container-separator and Natsumi's
+                // #natsumi-tabs-clearer both have. This row is only ever built
+                // when neither of those is present, so its rule is the only one
+                // in the strip: plain Firefox draws no divider there itself
+                // while the sidebar is expanded — the splitter ships
+                // `hidden="true"` and its rule is `border-top-color:
+                // transparent` under `#tabbrowser-tabs[expanded]`.
                 host = window.MozXULElement.parseXULToFragment(
-                    `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true"/>`
+                    `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true">
+                       <toolbarseparator flex="1"/>
+                     </hbox>`
                 ).firstChild;
             } catch (e) {
                 console.error('[ZenTabsOrganiser] Could not build the button row:', e);
@@ -2007,12 +2008,36 @@ Output:`;
         return host;
     }
 
-    /** Every element this mod may hang its buttons in, on either browser. */
+    const removeSyntheticHost = () =>
+        document.getElementById(SYNTHETIC_HOST_ID)?.remove();
+
+    /**
+     * Every element this mod may hang its buttons in, in order of preference.
+     *
+     * Building a row is the last resort, not the first. Something else may
+     * already own that strip of sidebar between the pinned tabs and the list,
+     * and adding a second one beside it is what makes the strip read as two
+     * stacked rows:
+     *
+     *   Zen      .pinned-tabs-container-separator — a <toolbarseparator flex="1">
+     *            plus the close-unpinned button, one per workspace.
+     *   Natsumi  #natsumi-tabs-clearer — a flex:1 separator div with a
+     *            border-top, plus its own Clear button. Natsumi inserts it with
+     *            `tabbrowserTabs.insertBefore(clearer, arrowscrollbox)`, which
+     *            is the very position this mod's own row takes.
+     *
+     * Both are the same shape — a rule and a button sharing one line — so the
+     * buttons simply join them, and the synthetic row is taken back down if it
+     * had already been built.
+     */
     function getSeparators() {
         // Both class names Zen has used across versions.
         const zenSeparators = document.querySelectorAll(
             '.pinned-tabs-container-separator, .vertical-pinned-tabs-container-separator');
-        if (zenSeparators.length) return Array.from(zenSeparators);
+        if (zenSeparators.length) { removeSyntheticHost(); return Array.from(zenSeparators); }
+
+        const natsumiClearer = document.getElementById('natsumi-tabs-clearer');
+        if (natsumiClearer) { removeSyntheticHost(); return [natsumiClearer]; }
 
         const synthetic = ensureSyntheticHost();
         if (synthetic) return [synthetic];
@@ -2334,6 +2359,10 @@ Output:`;
         version: MOD_VERSION,
         sort: sortTabsByTopic,
         clear: clearTabs,
+        // Re-pick the button host. The strip observer calls this on its own;
+        // it is exposed so another mod that builds its row late can ask for it
+        // directly, and so the behaviour is drivable from a test.
+        rehost: addButtonsToAllSeparators,
         destroy,
     };
 
