@@ -307,6 +307,43 @@ tab-group:not([split-view-group])[collapsed] {
   stroke: var(--zto-label-text, currentColor);
 }
 
+/* --- One icon per group header ---
+   Another mod may already draw one on the label. Natsumi Browser does, in
+   natsumi/modules/folders.css:
+
+     .tab-group-label::before {
+       mask-image: url("chrome://global/skin/icons/folder.svg");
+       background-color: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+     }
+
+   — and it reads as this mod's colour because --tab-group-color is what this
+   mod sets. Two icons then sit side by side: that generic folder, and the one
+   this mod picked from the group's name and domains.
+
+   The picked one wins, since a magnifying glass on "Search" says more than a
+   folder does, so the other stands down. Only on groups that actually carry
+   this mod's icon — :has() on the container it injects — so a group it has
+   never touched, or any group at all with auto-icons switched off, keeps
+   whatever its own mod draws. The two extra :has() and :not() clauses also put
+   this at (0,5,2) against Natsumi's (0,2,2), which is what decides it: both
+   sheets are user origin, so specificity settles it rather than load order. */
+tab-group:not([split-view-group]):not(:has(> .tab-group-container)):has(> .tab-group-label-container > .zto-group-icon-container)
+  > .tab-group-label-container .tab-group-label::before {
+  display: none !important;
+}
+
+/* The group's own colour, not the title's washed-out tint.
+   The shared rule above paints the icon like the title — the group's colour
+   pulled most of the way to the text colour — because it sits on a header
+   tinted with that same hue and needs to separate from it. A mod that repaints
+   the header removes that constraint, and at 25% the icon just reads white.
+   Firefox only, through the same guard as the rest of this section: a Zen
+   window keeps the icon it has always had. */
+tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .zto-group-icon {
+  fill: var(--tab-group-color, currentColor) !important;
+  stroke: var(--tab-group-color, currentColor) !important;
+}
+
 /* Zen draws its own group line; the rail above replaces it. */
 tab-group:not([split-view-group]) > .tab-group-line {
   display: none !important;
