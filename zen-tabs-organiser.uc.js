@@ -157,6 +157,26 @@
         return (typeof id === 'string' && id) ? id : null;
     };
 
+    /**
+     * True when this browser has workspaces but has not settled on one yet.
+     *
+     * Zen's nsZenSpaceManager initialises `#activeWorkspace = ""` and its
+     * `set activeWorkspace` falls back to `""` whenever the requested uuid is
+     * not in getWorkspaces() — so the empty string is the value for every Zen
+     * window between open and spaces-init, and it persists on a profile with
+     * no spaces. `typeof "" === "string"` passes the startup gate, and
+     * activeWorkspaceId() then returns null because "" is falsy, which used to
+     * drop inActiveScope() into the no-workspaces branch — meaning "every tab
+     * in the window, in every workspace". Clear would have closed loose tabs
+     * across all of the user's spaces.
+     *
+     * The previous release guarded that with `if (!currentWorkspaceId) return`
+     * at the top of both actions. This restores it, and is why neither Sort
+     * nor Clear may rely on activeWorkspaceId() alone.
+     */
+    const workspacesNotReady = () =>
+        typeof window.gZenWorkspaces !== 'undefined' && !activeWorkspaceId();
+
     /** True when a tab belongs to the strip the user is currently looking at. */
     const inActiveScope = (tab) => {
         const ws = activeWorkspaceId();
@@ -890,7 +910,10 @@ Output:`;
         'basket':           'chrome://browser/skin/payment-methods-16.svg',
         'book':             'chrome://browser/skin/library.svg',
         'briefcase':        'chrome://browser/skin/personal-info-16.svg',
-        'bug':              'chrome://global/skin/icons/error.svg',
+        // 'error.svg' exists in the tree but could not be confirmed in the
+        // packaged global icon set; 'warning.svg' is used throughout Firefox's
+        // own chrome, so it is the safer of the two.
+        'bug':              'chrome://global/skin/icons/warning.svg',
         'build':            'chrome://browser/skin/customize.svg',
         'chat':             'chrome://global/skin/icons/users.svg',
         'cloud':            'chrome://browser/skin/sync.svg',
@@ -1051,15 +1074,25 @@ Output:`;
     // The value that is never wrong is the one a tab actually ends up with,
     // so read that and republish it for the stylesheet to use.
     const RADIUS_VAR = '--zto-tab-radius';
-    // The horizontal inset of a tab's painted box, measured the same way and
-    // for the same reason: the two browsers do not agree on which variable
-    // carries it. Zen puts it in --tab-margin-block (2px, with
-    // --tab-inner-inline-margin zeroed); Firefox puts it in
-    // --tab-inner-inline-margin (7px) and leaves .tab-background's inline
-    // margin out of --tab-margin-block entirely. Reading it off a live tab is
-    // right on both, and on a theme that uses neither.
-    const GUTTER_VAR = '--zto-tab-gutter';
 
+    // The tab's horizontal inset is NOT measured, deliberately. An earlier
+    // version of this file read it off the same .tab-background and published
+    // it as --zto-tab-gutter, which was wrong three separate ways:
+    //   - On Zen's collapsed sidebar, Zen sets .tab-background
+    //     { margin-inline: auto !important }, so the measurement stopped being
+    //     the 2px --tab-margin-block the stylesheet used to hard-code — a
+    //     regression for every existing Zen user — and nothing re-measured
+    //     when the sidebar expanded again.
+    //   - querySelector returns document order, so with pinned tabs present it
+    //     measured a PINNED tab, whose inset is --tab-pinned-margin-inline-expanded.
+    //   - Worse, chrome.css zeroes .tab-background's inline margin inside a
+    //     Firefox group. Once Sort put a group at the top of the strip, the
+    //     next measurement read 0px and published it, and the whole group block
+    //     went flush to the edge. The mod fed on its own output.
+    // Each browser already names this value correctly in its own variable, so
+    // chrome.css reads --tab-margin-block on Zen and --tab-inner-inline-margin
+    // on Firefox and there is nothing to measure. The radius below is a
+    // different case: no theme is obliged to route it through a variable at all.
     function syncTabMetrics() {
         try {
             // An essential is a different shape by design in some themes, so
@@ -1077,8 +1110,6 @@ Output:`;
             // 0px is a real answer — a theme is allowed square tabs — so only
             // an empty one means nothing was resolved.
             if (radius) document.documentElement.style.setProperty(RADIUS_VAR, radius);
-            const gutter = style.marginInlineStart;
-            if (gutter) document.documentElement.style.setProperty(GUTTER_VAR, gutter);
         } catch (e) {
             console.warn('[ZenTabsOrganiser] Could not read the tab geometry:', e);
         }
@@ -1159,10 +1190,13 @@ Output:`;
     const releaseGroupColor = (groupEl) => {
         groupEl.removeAttribute('zen-tidy-color');
         groupEl.setAttribute('zen-tidy-user-color', 'true');
-        for (const prop of ['--tab-group-color', '--tab-group-color-invert',
-                            '--tab-group-color-pale', '--tab-group-background-color']) {
-            groupEl.style.removeProperty(prop);
-        }
+        // The inline custom properties are deliberately left alone. Firefox's
+        // `set color` writes the whole palette set into this same inline block
+        // before the event that brings us here, so every value this mod wrote
+        // has already been overwritten with the user's choice. Removing them
+        // would leave --tab-group-color undefined, which is not "the user's
+        // colour" — it is no colour at all, and both Firefox's own label and
+        // this mod's --zto-* tints would fall back to grey.
         const saved = readSavedColors();
         saved[groupEl.id] = USER_COLOR;
         writeSavedColors(saved);
@@ -1497,6 +1531,13 @@ Output:`;
             // Zen sorts one workspace at a time; a Firefox window has a single
             // strip, so there the window is the scope. scopedGroupSelector()
             // and inActiveScope() are the only two places that difference lives.
+            //
+            // But never act workspace-wide on a browser that HAS workspaces and
+            // simply has not named one yet — see workspacesNotReady().
+            if (workspacesNotReady()) {
+                console.warn('[ZenTabsOrganiser] No active workspace yet — not sorting');
+                return;
+            }
             const groupSelector = scopedGroupSelector();
             const allExistingGroupNames = new Set();
             document.querySelectorAll(groupSelector).forEach(el => {
@@ -1832,6 +1873,13 @@ Output:`;
 
     const clearTabs = () => {
         try {
+            // Same guard as Sort, and it matters more here: without it, a Zen
+            // window whose workspace id is still "" would have Clear close
+            // loose tabs in every workspace at once.
+            if (workspacesNotReady()) {
+                console.warn('[ZenTabsOrganiser] No active workspace yet — not clearing');
+                return;
+            }
             const tabsToClose = [];
 
             for (const tab of gBrowser.tabs) {
@@ -1933,12 +1981,22 @@ Output:`;
 
         // Sit directly above the tab list, wherever Firefox has moved the strip
         // to — the sidebar, the titlebar, a customize-mode preview.
+        //
+        // Positioned against the sibling, never through tabsEl. MozTabbrowserTabs
+        // overrides BOTH insertion methods (fx tabs.js):
+        //     appendChild(tab) { return this.insertBefore(tab, null); }
+        //     insertBefore(tab, node) { if (node == null) node = this.arrowScrollbox.lastChild; ... }
+        // so `tabsEl.appendChild(host)` would put the row INSIDE
+        // #tabbrowser-arrowscrollbox, right before the periphery — the exact
+        // placement the comment above exists to avoid, where allTabs() reads it
+        // as a tab and Clear would try to close it.
         const anchor = document.getElementById('tabbrowser-arrowscrollbox');
-        if (anchor?.parentElement === tabsEl) {
-            if (host.nextElementSibling !== anchor) tabsEl.insertBefore(host, anchor);
-        } else if (host.parentElement !== tabsEl) {
-            tabsEl.appendChild(host);
+        if (anchor?.parentElement !== tabsEl) {
+            // No anchor to sit against. Better no button row than one in the
+            // tab list, so stand down until the strip is built.
+            return null;
         }
+        if (host.nextElementSibling !== anchor) anchor.before(host);
         return host;
     }
 
@@ -2164,13 +2222,12 @@ Output:`;
                         if (!isZen() &&
                             document.getElementById('tabbrowser-tabs')?.getAttribute('orient') !== 'vertical') {
                             console.log('[ZenTabsOrganiser] Horizontal tabs: the Sort and Clear buttons need ' +
-                                'vertical tabs (Settings → Tabs → Browser layout → Vertical tabs). ' +
-                                'Group styling is applied either way.');
+                                'vertical tabs — right-click the tab strip and choose "Turn on Vertical Tabs", ' +
+                                'or set Browser layout → Vertical tabs in about:preferences.');
                         }
                         onCleanup(removeButtonsAndHosts);
                         onCleanup(removeOwnGroupIcons);
                         onCleanup(() => document.documentElement.style.removeProperty(RADIUS_VAR));
-                        onCleanup(() => document.documentElement.style.removeProperty(GUTTER_VAR));
                         onCleanup(() => { localEngines = null; });
                         setupUserColorHandover();
                         setupIconClickFallback();
