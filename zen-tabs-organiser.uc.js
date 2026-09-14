@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.7.0
+// @version        3.7.1
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.7.0';
+    const MOD_VERSION = '3.7.1';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -2024,7 +2024,21 @@ Output:`;
     }
 
     function addButtonsToAllSeparators() {
-        for (const host of getSeparators()) {
+        const hosts = getSeparators();
+
+        // Retire anything that used to be a host and no longer is. Without
+        // this it keeps both the marker class and the buttons it was given,
+        // and the strip ends up with two button rows — the stale one and the
+        // real one. Zen is unaffected: it has one separator per workspace and
+        // getSeparators() returns all of them, so none of them is ever stale.
+        for (const stale of document.querySelectorAll('.zen-tidy-host')) {
+            if (hosts.includes(stale)) continue;
+            stale.querySelectorAll('#zen-tidy-sort-button, #zen-tidy-clear-button')
+                .forEach(button => button.remove());
+            stale.classList.remove('zen-tidy-host', 'separator-is-sorting');
+        }
+
+        for (const host of hosts) {
             host.classList.add('zen-tidy-host'); // marker class for our CSS
             ensureButtonsExist(host);
         }
