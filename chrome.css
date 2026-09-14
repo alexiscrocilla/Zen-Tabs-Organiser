@@ -584,14 +584,11 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   #zen-tidy-clear-button { display: none !important; }
 }
 
-/* With both buttons off there is nothing left in the row this mod builds
-   on Firefox, and an empty rule line across the sidebar is worse than no
-   row at all. Zen's separator is Zen's own and stays either way. */
-@media not -moz-pref("zen-tabs-organiser.enable_sort") {
-  @media not -moz-pref("zen-tabs-organiser.enable_clear") {
-    #zen-tidy-host-row { display: none !important; }
-  }
-}
+/* No rule hiding this row when both buttons are off: it now carries the
+   divider Firefox's splitter stopped painting, so hiding it would leave the
+   sidebar with no separator between the pinned tabs and the list at all. With
+   both buttons off it simply reads as that divider, which is what Firefox
+   showed before this mod was installed. */
 
 /* ============= Separator host ============= */
 .zen-tidy-host {
@@ -626,6 +623,23 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
 #zen-tidy-host-row {
   margin-inline: var(--tab-inner-inline-margin, 0px) !important;
   flex: none !important;
+}
+
+/* Firefox already draws a divider between the pinned tabs and the tab list:
+   #vertical-pinned-tabs-splitter, a real <splitter> the user drags to resize
+   the pinned area, painted with --sidebar-divider-image. This mod's row draws
+   its own rule so that the rule and the buttons share one line, the way Zen's
+   .pinned-tabs-container-separator does — and the two together read as two
+   separate rows stacked in the sidebar, which is the bug this fixes.
+
+   So the splitter's divider steps aside while this row is present. Only the
+   paint goes: min-height stays, so the drag target the user resizes the
+   pinned area with is untouched. Keyed off this row's id, which no Zen window
+   has, and matched through :has() on the parent because the splitter is the
+   row's PREVIOUS sibling and CSS has no previous-sibling combinator. */
+#tabbrowser-tabs:has(> #zen-tidy-host-row) > #vertical-pinned-tabs-splitter {
+  background-image: none !important;
+  border-top: none !important;
 }
 
 #zen-tidy-host-row toolbarseparator {
