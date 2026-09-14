@@ -1,6 +1,8 @@
 # Zen Tabs Organiser
 
-Turn a crowded Zen sidebar into clear, color-coded tab groups with one click. Zen Tabs Organiser can sort locally by domain, use Firefox's on-device AI, or connect to your preferred AI provider.
+Turn a crowded vertical tab sidebar into clear, color-coded tab groups with one click. Zen Tabs Organiser can sort locally by domain, use Firefox's on-device AI, or connect to your preferred AI provider.
+
+Runs on **Zen Browser** and on **Firefox** with vertical tabs.
 
 <p align="center">
   <img src="Screenshot.png" alt="Zen sidebar before sorting, then after sorting with opened and collapsed tab groups" width="960">
@@ -11,19 +13,30 @@ Turn a crowded Zen sidebar into clear, color-coded tab groups with one click. Ze
 - **Private by default** with domain-based grouping and no network requests
 - **On-device AI** through Firefox's own Smart Tab Grouping models
 - **Automatic colors and icons** that persist across browser restarts
-- **Workspace-aware behavior** that only touches the active workspace
-- **Safe around Zen features**: pinned tabs, folders, and split views are left alone
+- **Workspace-aware behavior** that only touches the active workspace (on Zen)
+- **Safe around browser features**: pinned tabs, Zen folders, and split views are left alone
 - **Quick cleanup** of loose tabs with the **Clear** button
 
 ## Requirements
-- [Zen Browser](https://zen-browser.app/)
+- [Zen Browser](https://zen-browser.app/) 1.21+, or [Firefox](https://www.mozilla.org/firefox/) 140+ with tab groups and vertical tabs (developed against Firefox 156 and Zen 1.22)
 - [Sine](https://github.com/CosmoCreeper/Sine), the community mod manager for Zen and Firefox-based browsers
 
 > [!NOTE]
 > This is a Sine mod because its sorting logic requires JavaScript. Zen's native Mods Registry only loads CSS and preferences.
 
+### On Firefox
+Turn on vertical tabs first — **Settings → General → Browser layout → Vertical tabs**, or right-click the tab strip and choose *Turn on Vertical Tabs*. The **Sort** and **Clear** buttons appear in a row under the pinned tabs, the same place they occupy on Zen. Group styling applies in either layout, but the buttons need the vertical sidebar: there is nowhere sensible for them in the horizontal strip.
+
+Two Zen-only touches have no Firefox equivalent and stand down there:
+
+| Feature | Zen | Firefox |
+|---------|-----|---------|
+| Workspaces | Sort and Clear act on the active workspace only | Acts on the window's tab strip |
+| Group right-click | Zen's folder menu: rename, pick an icon | Firefox's own group editor: rename, recolor |
+| Group color picked by hand | Not offered | Honored — the mod stops re-coloring that group |
+
 ## Installation
-Open `about:preferences#sineMods` in Zen, then choose one of the following methods:
+Open `about:preferences#sineMods`, then choose one of the following methods:
 
 ### Sine store
 Search for **Zen Tabs Organiser** in the Sine marketplace and select **Install**.
@@ -98,6 +111,9 @@ Confirm that Sine is installed and that `sine.allow-unsafe-js` is enabled for re
 ### The first local-AI sort is slow
 Firefox downloads its Smart Tab Grouping models on first use. Later sorts reuse the downloaded models.
 
+### The buttons do not appear on Firefox
+The buttons need vertical tabs: **Settings → General → Browser layout → Vertical tabs**. The browser console logs a reminder when the mod loads with a horizontal strip.
+
 ### Group styles conflict with another mod
 Zen Tabs Organiser styles groups independently. Another mod that changes tab-group colors, icons, or geometry can produce conflicting results; disable one of the overlapping group-style mods.
 
@@ -117,12 +133,15 @@ git clone https://github.com/alexiscrocilla/Zen-Tabs-Organiser.git
 
 Sine injects the `.uc.js` script into `chrome://browser/content/browser.xhtml`. Keep runtime behavior in the script, visual rules in `chrome.css`, and ensure every added listener, observer, timer, or DOM node is removed by the unload handler.
 
+The browser differences are collected in one place each: `isZen()`, `activeWorkspaceId()`, `inActiveScope()` and `scopedGroupSelector()` in the script, and the `FIREFOX` section at the end of `chrome.css`. Detection is by DOM (`commandset#zenCommandSet`), never by user agent. Firefox rules are guarded with `:not(:has(> .tab-group-container))` so a Zen window can never match them.
+
 ## Contributing
 Bug reports and focused pull requests are welcome. Before opening a pull request:
 1. Test sorting with no AI provider and with any provider affected by your change.
 2. Verify both full-workspace and multi-selected-tab sorting.
 3. Confirm that pinned tabs, folders, split views, and inactive workspaces remain untouched.
-4. Toggle the mod off and on without restarting Zen to verify cleanup and reinjection.
+4. Toggle the mod off and on without restarting the browser to verify cleanup and reinjection.
+5. Check the change on **both** Zen and Firefox with vertical tabs. The group markup differs between them — Firefox keeps the tabs as direct children of `<tab-group>` and wraps the label in `.tab-group-label-hover-highlight`, Zen puts the tabs in a `.tab-group-container` and hoists the label — and `chrome.css` carries a separate, guarded section for each.
 
 ## Migrating from the Zen Mod Format
 Older releases used `mod.json`, `chrome.js`, and `style.css`. Remove the old version from Zen's Mods Registry before installing the Sine version to prevent duplicate controls. Existing preference names are unchanged.
