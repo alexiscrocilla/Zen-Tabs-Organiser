@@ -634,18 +634,27 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   flex: none !important;
 }
 
-/* The rule itself. The shared .zen-tidy-host rule above gives every separator
-   its 1px height and its flex, but no colour: on Zen the colour comes from
-   Zen's own vertical-tabs.css, and on Natsumi's row from Natsumi's border-top.
-   Only this mod's own row has nobody to paint it, so without this it is a 1px
-   transparent box and the strip shows no divider at all. Same value Zen uses,
-   so the two read identically.
+/* The rule on this mod's own row, drawn by an element of this mod's own —
+   see ensureSyntheticHost() for why it is not a <toolbarseparator>. Every
+   dimension is stated here, including the ones that are normally left to
+   inherit: nobody else styles this element, so nothing else can be relied on,
+   and min/max-height pin it against anything that would otherwise stretch a
+   flex child to the row.
 
-   Set through the id rather than .zen-tidy-host so a Zen or Natsumi row keeps
-   whatever its own mod painted. The sorting pulse below names this id too, so
-   that it still outranks this. */
-#zen-tidy-host-row toolbarseparator {
+   Colour and geometry both live on this mod's own class, so a Zen or Natsumi
+   row keeps whatever its own mod painted on its own separator. Same value Zen
+   uses, so the two read identically. */
+#zen-tidy-host-row > .zto-host-rule {
+  flex: 1 1 auto !important;
+  align-self: center !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  max-height: 1px !important;
+  margin: 0 4px 0 0 !important;
+  padding: 0 !important;
+  border: none !important;
   background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)) !important;
+  transition: background-color var(--zto-enter) var(--zto-ease-out) !important;
 }
 
 /* Firefox's own #vertical-pinned-tabs-splitter is left entirely alone. It
@@ -689,11 +698,12 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   50%      { opacity: 1; }
 }
 
-/* The id form is not redundant: this mod's own row is coloured through an id
-   above, which would otherwise outrank a class here and the rule would not
-   pulse while a sort runs. */
+/* The second selector is not redundant: this mod's own rule is a different
+   element from the <toolbarseparator> Zen and Natsumi supply, and it is
+   coloured through an id, which would otherwise outrank a class here and the
+   rule would not pulse while a sort runs. */
 .zen-tidy-host.separator-is-sorting toolbarseparator,
-#zen-tidy-host-row.separator-is-sorting toolbarseparator {
+#zen-tidy-host-row.separator-is-sorting > .zto-host-rule {
   background-color: #c4a7e7 !important;
   animation: zenSortingPulse 1.2s ease-in-out infinite !important;
 }
@@ -755,10 +765,9 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   .tab-is-sorting .tab-icon-image,
   .tab-is-sorting .tab-label,
   .zen-tidy-host.separator-is-sorting toolbarseparator,
-  /* Same reason as above, one level further: without the id form the pulse
-     would keep animating for someone who asked the browser to stop moving
-     things. */
-  #zen-tidy-host-row.separator-is-sorting toolbarseparator {
+  /* Same reason as above, one level further: without this the pulse would keep
+     animating for someone who asked the browser to stop moving things. */
+  #zen-tidy-host-row.separator-is-sorting > .zto-host-rule {
     animation: none !important;
   }
 }
