@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.7.4
+// @version        3.7.5
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.7.4';
+    const MOD_VERSION = '3.7.5';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1976,9 +1976,17 @@ Output:`;
                 // while the sidebar is expanded — the splitter ships
                 // `hidden="true"` and its rule is `border-top-color:
                 // transparent` under `#tabbrowser-tabs[expanded]`.
+                // A plain <hbox> for the rule, not a <toolbarseparator>.
+                // The shared .zen-tidy-host toolbarseparator rule is written
+                // for the separators Zen and Natsumi already put in their rows,
+                // where their own mod has sized them; asking a bare
+                // toolbarseparator to be a 1px line in a row nobody else styles
+                // left it drawing at full height. An <hbox> carries no native
+                // separator behaviour to override — it is whatever the rule
+                // below says it is, and nothing else.
                 host = window.MozXULElement.parseXULToFragment(
                     `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true">
-                       <toolbarseparator flex="1"/>
+                       <hbox class="zto-host-rule"/>
                      </hbox>`
                 ).firstChild;
             } catch (e) {
