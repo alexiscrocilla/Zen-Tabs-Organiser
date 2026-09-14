@@ -634,6 +634,20 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   flex: none !important;
 }
 
+/* The rule itself. The shared .zen-tidy-host rule above gives every separator
+   its 1px height and its flex, but no colour: on Zen the colour comes from
+   Zen's own vertical-tabs.css, and on Natsumi's row from Natsumi's border-top.
+   Only this mod's own row has nobody to paint it, so without this it is a 1px
+   transparent box and the strip shows no divider at all. Same value Zen uses,
+   so the two read identically.
+
+   Set through the id rather than .zen-tidy-host so a Zen or Natsumi row keeps
+   whatever its own mod painted. The sorting pulse below names this id too, so
+   that it still outranks this. */
+#zen-tidy-host-row toolbarseparator {
+  background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)) !important;
+}
+
 /* Firefox's own #vertical-pinned-tabs-splitter is left entirely alone. It
    ships hidden, and even when shown its rule is transparent under
    #tabbrowser-tabs[expanded] — so while the sidebar is expanded Firefox draws
@@ -675,9 +689,11 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   50%      { opacity: 1; }
 }
 
-/* Zen's separator only: the Firefox row has no rule to pulse. The tabs being
-   sorted still pulse through .tab-is-sorting below. */
-.zen-tidy-host.separator-is-sorting toolbarseparator {
+/* The id form is not redundant: this mod's own row is coloured through an id
+   above, which would otherwise outrank a class here and the rule would not
+   pulse while a sort runs. */
+.zen-tidy-host.separator-is-sorting toolbarseparator,
+#zen-tidy-host-row.separator-is-sorting toolbarseparator {
   background-color: #c4a7e7 !important;
   animation: zenSortingPulse 1.2s ease-in-out infinite !important;
 }
@@ -738,7 +754,11 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   }
   .tab-is-sorting .tab-icon-image,
   .tab-is-sorting .tab-label,
-  .zen-tidy-host.separator-is-sorting toolbarseparator {
+  .zen-tidy-host.separator-is-sorting toolbarseparator,
+  /* Same reason as above, one level further: without the id form the pulse
+     would keep animating for someone who asked the browser to stop moving
+     things. */
+  #zen-tidy-host-row.separator-is-sorting toolbarseparator {
     animation: none !important;
   }
 }
