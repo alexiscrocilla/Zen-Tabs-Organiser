@@ -1,9 +1,9 @@
 {
   "id": "zen-tabs-organiser",
   "name": "Zen Tabs Organiser",
-  "description": "Sort tabs into groups with on-device AI or by domain. Auto-colors, auto-icons, clear ungrouped tabs.",
+  "description": "Sort tabs into groups with on-device AI or by domain, on Zen and Firefox. Auto-colors, auto-icons, clear ungrouped tabs.",
   "author": "Alexis",
-  "version": "3.6.1",
+  "version": "3.7.0",
   "homepage": "https://github.com/alexiscrocilla/Zen-Tabs-Organiser",
   "readme": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/README.md",
   "image": "https://raw.githubusercontent.com/alexiscrocilla/Zen-Tabs-Organiser/main/Screenshot.png",
@@ -14,7 +14,7 @@
   "scripts": {
     "zen-tabs-organiser.uc.js": {
       "name": "Zen Tabs Organiser",
-      "description": "Sort & Clear buttons, tab grouping, auto-colors and auto-icons.",
+      "description": "Sort & Clear buttons, tab grouping, auto-colors and auto-icons. Works on Zen and on Firefox vertical tabs.",
       "include": [
         "chrome://browser/content/browser.xhtml"
       ]
@@ -34,8 +34,9 @@
     "privacy"
   ],
   "createdAt": "2026-03-25",
-  "updatedAt": "2026-08-28T00:00:00Z",
+  "updatedAt": "2026-09-14T00:00:00Z",
   "fork": [
-    "zen"
+    "zen",
+    "firefox"
   ]
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.6.1
+// @version        3.7.0
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.6.1';
+    const MOD_VERSION = '3.7.0';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -86,17 +86,26 @@
     //   <zen-folder>          Zen's own folders. A separate element (nsZenFolder
     //                         extends MozTabbrowserTabGroup) that Zen lays out and
     //                         animates itself in ZenFolders.animateCollapse().
-    //   [split-view-group]    Split views are modelled as tab groups. Ungrouping
-    //                         their tabs or removing the group destroys the split;
-    //                         Zen's own `set collapsed` bails out on them too.
+    //   [split-view-group]    How Zen models a split view: as a tab group.
+    //                         Ungrouping their tabs or removing the group
+    //                         destroys the split; Zen's own `set collapsed`
+    //                         bails out on them too.
+    //   tab-split-view-wrapper  How Firefox models the same thing — a separate
+    //                         element that can sit inside an ordinary group.
+    //                         Zen keeps the element too, so naming both is
+    //                         right on either browser.
     // Only plain, non-split tab groups are ours to sort, colour and clean up.
     const GROUP_SELECTOR = 'tab-group:not([split-view-group])';
+
+    /** Every container kind this mod has to ask about, for closest(). */
+    const CONTAINER_SELECTOR = 'tab-group, zen-folder, tab-split-view-wrapper';
 
     /** True for a container this mod must leave alone. */
     const isForeignContainer = (el) => {
         if (!el) return false;
         return el.isZenFolder === true
             || el.localName === 'zen-folder'
+            || el.localName === 'tab-split-view-wrapper'
             || el.hasAttribute?.('split-view-group');
     };
 
@@ -105,9 +114,86 @@
         const group = tab?.closest?.(GROUP_SELECTOR);
         if (!group) return null;
         // A tab nested in a folder inside one of our groups still belongs to the folder.
-        const nearest = tab.closest('tab-group, zen-folder');
+        const nearest = tab.closest(CONTAINER_SELECTOR);
         if (nearest !== group && isForeignContainer(nearest)) return null;
         return group;
+    };
+
+    // ==========================================
+    //  Zen vs. plain Firefox
+    // ==========================================
+    // Zen is a Firefox fork, so nearly everything here is shared. Four things
+    // are not, and each one used to be assumed rather than checked:
+    //
+    //   Workspaces    Zen scopes the strip to gZenWorkspaces.activeWorkspace and
+    //                 tags every tab with `zen-workspace-id`. Firefox has one
+    //                 strip per window and neither exists — so the old
+    //                 `if (!currentWorkspaceId) return` turned Sort and Clear
+    //                 into no-ops, and the startup gate never opened at all.
+    //   Command set   Zen adds <commandset id="zenCommandSet">. Firefox only
+    //                 ships #mainCommandSet.
+    //   Button host   Zen draws .pinned-tabs-container-separator under the
+    //                 pinned tabs, which is where the buttons hang. Firefox has
+    //                 no such row, so this mod builds one.
+    //   Group markup  Zen replaces the group's <html:slot/> with
+    //                 <div class="tab-group-container"> and lifts the label out
+    //                 of .tab-group-label-hover-highlight. That difference is
+    //                 handled in chrome.css, not here.
+    //
+    // Detection is by DOM rather than by user agent: #zenCommandSet is part of
+    // Zen's own browser.xhtml, so it is present from the first tick — before
+    // any Zen module has had a chance to initialise.
+    const isZen = () => !!document.querySelector('commandset#zenCommandSet');
+
+    /** The commandset to hang this mod's commands on, whichever build we are in. */
+    const commandSetElement = () =>
+        document.querySelector('commandset#zenCommandSet') ||
+        document.querySelector('commandset#mainCommandSet') ||
+        document.querySelector('commandset');
+
+    /** Zen's active workspace id, or null on a browser without workspaces. */
+    const activeWorkspaceId = () => {
+        const id = window.gZenWorkspaces?.activeWorkspace;
+        return (typeof id === 'string' && id) ? id : null;
+    };
+
+    /**
+     * True when this browser has workspaces but has not settled on one yet.
+     *
+     * Zen's nsZenSpaceManager initialises `#activeWorkspace = ""` and its
+     * `set activeWorkspace` falls back to `""` whenever the requested uuid is
+     * not in getWorkspaces() — so the empty string is the value for every Zen
+     * window between open and spaces-init, and it persists on a profile with
+     * no spaces. `typeof "" === "string"` passes the startup gate, and
+     * activeWorkspaceId() then returns null because "" is falsy, which used to
+     * drop inActiveScope() into the no-workspaces branch — meaning "every tab
+     * in the window, in every workspace". Clear would have closed loose tabs
+     * across all of the user's spaces.
+     *
+     * The previous release guarded that with `if (!currentWorkspaceId) return`
+     * at the top of both actions. This restores it, and is why neither Sort
+     * nor Clear may rely on activeWorkspaceId() alone.
+     */
+    const workspacesNotReady = () =>
+        typeof window.gZenWorkspaces !== 'undefined' && !activeWorkspaceId();
+
+    /** True when a tab belongs to the strip the user is currently looking at. */
+    const inActiveScope = (tab) => {
+        const ws = activeWorkspaceId();
+        // Firefox: one strip per window, so every tab the user can see counts.
+        // `isOpen` is Firefox's own name for "a real tab in this strip" — it
+        // rules out the Firefox View tab and anything already closing — and
+        // `hidden` is what an extension sets on a tab it has parked off-strip.
+        if (!ws) return tab.isOpen !== false && !tab.hidden;
+        return tab.getAttribute('zen-workspace-id') === ws;
+    };
+
+    /** Selector matching the groups of the strip in view. */
+    const scopedGroupSelector = () => {
+        const ws = activeWorkspaceId();
+        return ws
+            ? `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${ws}"])`
+            : GROUP_SELECTOR;
     };
 
     // --- AI prompt template (Arc Tidy Tabs style) ---
@@ -175,6 +261,9 @@ Output:`;
     let isSorting = false;
     let commandListenerAdded = false;
     let destroyed = false;
+    // True only while applyGroupColor() is writing, so the TabGroupUpdate
+    // listener can tell this mod's own writes from the user's.
+    let applyingColor = false;
 
     // --- Tracked timers ---
     // Every pending timer is remembered so teardown can cancel it; a stray
@@ -332,10 +421,14 @@ Output:`;
         return keywords;
     };
 
-    const findGroupElement = (topicName, workspaceId) => {
+    const findGroupElement = (topicName) => {
         const safe = topicName.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const ws = activeWorkspaceId();
+        const selector = ws
+            ? `${GROUP_SELECTOR}[label="${safe}"]:has(tab[zen-workspace-id="${ws}"])`
+            : `${GROUP_SELECTOR}[label="${safe}"]`;
         try {
-            return document.querySelector(`${GROUP_SELECTOR}[label="${safe}"]:has(tab[zen-workspace-id="${workspaceId}"])`);
+            return document.querySelector(selector);
         } catch { return null; }
     };
 
@@ -804,7 +897,69 @@ Output:`;
     //  Auto-assign icons to groups
     // ==========================================
 
-    const ICON_BASE = 'chrome://browser/skin/zen-icons/selectable/';
+    // Zen ships a large selectable icon set at chrome://browser/skin/zen-icons/.
+    // Firefox has nothing equivalent, and a XUL <image> whose src does not
+    // resolve draws an empty box in silence — so every logical icon below is
+    // mapped to the closest thing that actually exists in Firefox's own chrome,
+    // and anything without a decent match falls back to the folder icon rather
+    // than to a dead URL.
+    const ZEN_ICON_BASE = 'chrome://browser/skin/zen-icons/selectable/';
+
+    const FIREFOX_ICONS = {
+        'airplane':         'chrome://browser/skin/urlbar/flight-airline.svg',
+        'basket':           'chrome://browser/skin/payment-methods-16.svg',
+        'book':             'chrome://browser/skin/library.svg',
+        'briefcase':        'chrome://browser/skin/personal-info-16.svg',
+        // 'error.svg' exists in the tree but could not be confirmed in the
+        // packaged global icon set; 'warning.svg' is used throughout Firefox's
+        // own chrome, so it is the safer of the two.
+        'bug':              'chrome://global/skin/icons/warning.svg',
+        'build':            'chrome://browser/skin/customize.svg',
+        'chat':             'chrome://global/skin/icons/users.svg',
+        'cloud':            'chrome://browser/skin/sync.svg',
+        'code':             'chrome://global/skin/icons/developer.svg',
+        'construct':        'chrome://global/skin/icons/settings.svg',
+        'extension-puzzle': 'chrome://mozapps/skin/extensions/extensionGeneric.svg',
+        'flask':            'chrome://browser/skin/labs-16.svg',
+        'folder':           'chrome://global/skin/icons/folder.svg',
+        'globe':            'chrome://global/skin/icons/search-glass.svg',
+        'globe-1':          'chrome://browser/skin/notification-icons/local-network.svg',
+        'image':            'chrome://browser/skin/screenshot.svg',
+        'key':              'chrome://browser/skin/home.svg',
+        'location':         'chrome://browser/skin/notification-icons/geo.svg',
+        'lock-closed':      'chrome://global/skin/icons/security.svg',
+        'mail':             'chrome://browser/skin/mail.svg',
+        'megaphone':        'chrome://browser/skin/trending.svg',
+        'music':            'chrome://browser/skin/notification-icons/speaker.svg',
+        'page':             'chrome://global/skin/icons/page-portrait.svg',
+        'palette':          'chrome://browser/skin/customize.svg',
+        'people':           'chrome://global/skin/icons/users.svg',
+        'school':           'chrome://browser/skin/reader-mode.svg',
+        'stats-chart':      'chrome://global/skin/icons/performance.svg',
+        'terminal':         'chrome://global/skin/icons/developer.svg',
+        'time':             'chrome://browser/skin/calendar-24.svg',
+        'video':            'chrome://browser/skin/notification-icons/screen.svg',
+        'wallet':           'chrome://browser/skin/payment-methods-16.svg',
+    };
+
+    /** The chrome:// URL for a logical icon name, on the browser we are in. */
+    const iconUrlFor = (name) => isZen()
+        ? `${ZEN_ICON_BASE}${name}.svg`
+        : (FIREFOX_ICONS[name] || FIREFOX_ICONS.folder);
+
+    /** The icon every build is guaranteed to have. */
+    const fallbackIconUrl = () => iconUrlFor('folder');
+
+    /**
+     * True when a URL out of the session store still resolves here. A profile
+     * that has been opened in both browsers — or a mod moved from one to the
+     * other — otherwise restores Zen icon URLs into a Firefox window, where
+     * they render as nothing at all.
+     */
+    const iconUrlIsUsable = (url) =>
+        typeof url === 'string' &&
+        url.startsWith('chrome://') &&
+        (isZen() || !url.startsWith(ZEN_ICON_BASE));
 
     /** Map of keywords (in label or domain) → icon name.
      *  ORDER MATTERS: more specific entries must come BEFORE generic ones.
@@ -869,7 +1024,7 @@ Output:`;
         // 1. Check LABEL first
         for (const entry of ICON_MAP) {
             for (const kw of entry.keywords) {
-                if (labelLower.includes(kw)) return `${ICON_BASE}${entry.icon}.svg`;
+                if (labelLower.includes(kw)) return iconUrlFor(entry.icon);
             }
         }
 
@@ -884,11 +1039,11 @@ Output:`;
         const domainText = domains.join(' ');
         for (const entry of ICON_MAP) {
             for (const kw of entry.keywords) {
-                if (domainText.includes(kw)) return `${ICON_BASE}${entry.icon}.svg`;
+                if (domainText.includes(kw)) return iconUrlFor(entry.icon);
             }
         }
 
-        return `${ICON_BASE}folder.svg`;
+        return fallbackIconUrl();
     }
 
     /**
@@ -920,7 +1075,25 @@ Output:`;
     // so read that and republish it for the stylesheet to use.
     const RADIUS_VAR = '--zto-tab-radius';
 
-    function syncTabRadius() {
+    // The tab's horizontal inset is NOT measured, deliberately. An earlier
+    // version of this file read it off the same .tab-background and published
+    // it as --zto-tab-gutter, which was wrong three separate ways:
+    //   - On Zen's collapsed sidebar, Zen sets .tab-background
+    //     { margin-inline: auto !important }, so the measurement stopped being
+    //     the 2px --tab-margin-block the stylesheet used to hard-code — a
+    //     regression for every existing Zen user — and nothing re-measured
+    //     when the sidebar expanded again.
+    //   - querySelector returns document order, so with pinned tabs present it
+    //     measured a PINNED tab, whose inset is --tab-pinned-margin-inline-expanded.
+    //   - Worse, chrome.css zeroes .tab-background's inline margin inside a
+    //     Firefox group. Once Sort put a group at the top of the strip, the
+    //     next measurement read 0px and published it, and the whole group block
+    //     went flush to the edge. The mod fed on its own output.
+    // Each browser already names this value correctly in its own variable, so
+    // chrome.css reads --tab-margin-block on Zen and --tab-inner-inline-margin
+    // on Firefox and there is nothing to measure. The radius below is a
+    // different case: no theme is obliged to route it through a variable at all.
+    function syncTabMetrics() {
         try {
             // An essential is a different shape by design in some themes, so
             // measure an ordinary tab. The unscoped query is the fallback for
@@ -929,16 +1102,16 @@ Output:`;
                 document.querySelector('#tabbrowser-tabs .tabbrowser-tab:not([zen-essential]) .tab-background') ||
                 document.querySelector('.tabbrowser-tab:not([zen-essential]) .tab-background');
             if (!bg) return;
+            const style = window.getComputedStyle(bg);
             // Deliberately a single corner: `borderRadius` resolves to a
             // multi-value shorthand whenever the corners differ, which would
             // be nonsense inside the `<r> <r> 0 0` shorthands this feeds.
-            const radius = window.getComputedStyle(bg).borderTopLeftRadius;
+            const radius = style.borderTopLeftRadius;
             // 0px is a real answer — a theme is allowed square tabs — so only
             // an empty one means nothing was resolved.
-            if (!radius) return;
-            document.documentElement.style.setProperty(RADIUS_VAR, radius);
+            if (radius) document.documentElement.style.setProperty(RADIUS_VAR, radius);
         } catch (e) {
-            console.warn('[ZenTabsOrganiser] Could not read the tab corner radius:', e);
+            console.warn('[ZenTabsOrganiser] Could not read the tab geometry:', e);
         }
     }
 
@@ -981,16 +1154,73 @@ Output:`;
         if (groupEl.style.getPropertyValue('--tab-group-color') === color) return false;
 
         // Still go through the setter so Firefox keeps its own bookkeeping and
-        // the choice survives in the session store.
+        // the choice survives in the session store. The flag is what tells the
+        // TabGroupUpdate listener below that this write is ours, not the
+        // user's.
+        applyingColor = true;
         try { groupEl.color = `${groupEl.id}-favicon`; } catch {}
+        finally { applyingColor = false; }
 
         groupEl.setAttribute('zen-tidy-color', 'true');
         groupEl.style.setProperty('--tab-group-color', color);
         groupEl.style.setProperty('--tab-group-color-invert', color);
         groupEl.style.setProperty('--tab-group-color-pale',
             `color-mix(in srgb, ${color} 35%, white)`);
+        // Firefox 156 reads a second, parallel set of variables behind the
+        // `browser.nova.enabled` design refresh. Publishing it too costs
+        // nothing and keeps the group's colour resolved under either.
+        groupEl.style.setProperty('--tab-group-background-color', color);
         return true;
     };
+
+    // --- Standing down when the user picks a colour themselves ---
+    // Firefox reaches its own group editor from a right-click on the group
+    // label, colour swatches included. That editor writes the palette
+    // variables inline — exactly where this mod writes its own — so without
+    // this the user's pick would appear to do nothing at all. Zen routes the
+    // same right-click to its folder menu, which has no colour picker, so this
+    // simply never fires there.
+    const FIREFOX_GROUP_COLORS = new Set([
+        'blue', 'purple', 'cyan', 'orange', 'yellow', 'pink', 'green', 'red', 'gray',
+    ]);
+    // Written into the saved-colour map so the hand-over outlives a restart;
+    // a DOM attribute alone would be forgotten with the element.
+    const USER_COLOR = 'user';
+
+    const releaseGroupColor = (groupEl) => {
+        groupEl.removeAttribute('zen-tidy-color');
+        groupEl.setAttribute('zen-tidy-user-color', 'true');
+        // The inline custom properties are deliberately left alone. Firefox's
+        // `set color` writes the whole palette set into this same inline block
+        // before the event that brings us here, so every value this mod wrote
+        // has already been overwritten with the user's choice. Removing them
+        // would leave --tab-group-color undefined, which is not "the user's
+        // colour" — it is no colour at all, and both Firefox's own label and
+        // this mod's --zto-* tints would fall back to grey.
+        const saved = readSavedColors();
+        saved[groupEl.id] = USER_COLOR;
+        writeSavedColors(saved);
+        console.log(`[ZenTabsOrganiser] "${groupEl.getAttribute('label')}" recoloured by hand — leaving it alone`);
+    };
+
+    function setupUserColorHandover() {
+        const container = gBrowser?.tabContainer;
+        if (!container) return;
+        const onUpdate = (event) => {
+            if (applyingColor) return;
+            const group = event.target?.closest?.(GROUP_SELECTOR);
+            // Only groups this mod has actually painted: one it has never
+            // touched was never its business, and a group still being built by
+            // addTabGroup() has not been painted yet.
+            if (!group?.hasAttribute('zen-tidy-color')) return;
+            // The sentinel this mod writes (`<id>-favicon`) is never a palette
+            // name, so only a real user choice gets through here.
+            if (!FIREFOX_GROUP_COLORS.has(group.color)) return;
+            releaseGroupColor(group);
+        };
+        container.addEventListener('TabGroupUpdate', onUpdate);
+        onCleanup(() => container.removeEventListener('TabGroupUpdate', onUpdate));
+    }
 
     /**
      * Assign a colour to every group, keeping whatever a group already has.
@@ -1004,11 +1234,18 @@ Output:`;
         const live = [...groupElementsMap.values()].filter(el => el?.isConnected && el.id);
 
         // Colours already spoken for by groups that are still on screen.
-        const taken = new Set(live.map(el => saved[el.id]).filter(Boolean));
+        const taken = new Set(
+            live.map(el => saved[el.id]).filter(c => c && c !== USER_COLOR));
         const nextColorMap = {};
 
         for (const groupEl of live) {
             let color = saved[groupEl.id];
+            // A group the user has recoloured by hand keeps their colour, and
+            // keeps it across restarts.
+            if (color === USER_COLOR || groupEl.hasAttribute('zen-tidy-user-color')) {
+                nextColorMap[groupEl.id] = USER_COLOR;
+                continue;
+            }
             if (!color) {
                 color = CURATED_PALETTE.find(c => !taken.has(c))
                     ?? CURATED_PALETTE[taken.size % CURATED_PALETTE.length];
@@ -1031,6 +1268,10 @@ Output:`;
         if (!autoColors()) return;
         let restored = 0;
         for (const [groupId, color] of Object.entries(readSavedColors())) {
+            if (color === USER_COLOR) {
+                document.getElementById(groupId)?.setAttribute('zen-tidy-user-color', 'true');
+                continue;
+            }
             const group = document.getElementById(groupId);
             if (group?.isConnected) {
                 try {
@@ -1098,14 +1339,25 @@ Output:`;
             labelContainer.insertBefore(host, labelContainer.firstChild);
         }
 
-        // iconUrl is always built from ICON_BASE plus a name from ICON_MAP,
-        // never from page content.
         host.textContent = '';
-        host.appendChild(
-            window.MozXULElement.parseXULToFragment(
-                `<image class="${ICON_CLASS}" src="${iconUrl}"/>`
-            ).firstChild
-        );
+        // `src` is set as an attribute rather than interpolated into the XUL
+        // string: it can come back out of the session store, or out of Zen's
+        // emoji picker, and neither is this mod's own literal.
+        const image = window.MozXULElement.parseXULToFragment(
+            `<image class="${ICON_CLASS}"/>`
+        ).firstChild;
+        const fallback = fallbackIconUrl();
+        if (iconUrl !== fallback) {
+            // A chrome:// icon that this build does not have draws nothing at
+            // all rather than failing loudly, which reads as a missing feature.
+            // One retry, at the icon every build is guaranteed to have.
+            image.addEventListener('error', () => {
+                image.setAttribute('src', fallback);
+                host.setAttribute('data-zto-icon', fallback);
+            }, { once: true });
+        }
+        image.setAttribute('src', iconUrl);
+        host.appendChild(image);
         host.setAttribute('data-zto-icon', iconUrl);
         return true;
     };
@@ -1156,6 +1408,7 @@ Output:`;
         if (!autoIcons()) return;
         let restored = 0;
         for (const [groupId, iconUrl] of Object.entries(readSavedIcons())) {
+            if (!iconUrlIsUsable(iconUrl)) continue;
             const group = document.getElementById(groupId);
             if (group?.isConnected) {
                 try {
@@ -1183,6 +1436,12 @@ Output:`;
         return group;
     };
 
+    // Renaming a group and choosing its icon both go through Zen's own folder
+    // menu, its rename flow and its emoji picker — none of which exist in
+    // Firefox. Nothing is lost by standing down there: Firefox's own group
+    // editor is already on the right-click of a group label (tabgroup.js opens
+    // it directly), and it renames and recolours. The icon is the one thing it
+    // has no answer for, so on Firefox a group keeps the icon this mod picks.
     function setupGroupContextMenu() {
         const menu = document.getElementById('zenFolderActions');
         if (!menu) return;
@@ -1269,11 +1528,17 @@ Output:`;
             separators = Array.from(getSeparators());
             separators.forEach(sep => sep.classList.add('separator-is-sorting'));
 
-            const currentWorkspaceId = window.gZenWorkspaces?.activeWorkspace;
-            if (!currentWorkspaceId) { console.error('[ZenTabsOrganiser] No active workspace'); return; }
-
-            // --- Gather existing group names ---
-            const groupSelector = `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${currentWorkspaceId}"])`;
+            // Zen sorts one workspace at a time; a Firefox window has a single
+            // strip, so there the window is the scope. scopedGroupSelector()
+            // and inActiveScope() are the only two places that difference lives.
+            //
+            // But never act workspace-wide on a browser that HAS workspaces and
+            // simply has not named one yet — see workspacesNotReady().
+            if (workspacesNotReady()) {
+                console.warn('[ZenTabsOrganiser] No active workspace yet — not sorting');
+                return;
+            }
+            const groupSelector = scopedGroupSelector();
             const allExistingGroupNames = new Set();
             document.querySelectorAll(groupSelector).forEach(el => {
                 const label = el.getAttribute('label');
@@ -1284,19 +1549,19 @@ Output:`;
             let initialTabs;
             if (isSortingSelected) {
                 initialTabs = selectedTabs.filter(tab =>
-                    tab.getAttribute('zen-workspace-id') === currentWorkspaceId &&
+                    inActiveScope(tab) &&
                     !tab.pinned && !tab.hasAttribute('zen-empty-tab') && tab.isConnected &&
-                    !isForeignContainer(tab.closest('tab-group, zen-folder')) &&
+                    !isForeignContainer(tab.closest(CONTAINER_SELECTOR)) &&
                     !ownGroupOf(tab)
                 );
             } else {
                 initialTabs = Array.from(gBrowser.tabs).filter(tab => {
-                    if (tab.getAttribute('zen-workspace-id') !== currentWorkspaceId) return false;
+                    if (!inActiveScope(tab)) return false;
                     if (tab.pinned || tab.hasAttribute('zen-empty-tab') || !tab.isConnected) return false;
                     if (ownGroupOf(tab)) return false;
                     // Leave tabs the user already filed in a Zen folder or a split
                     // view where they are; sorting them out would dismantle those.
-                    if (isForeignContainer(tab.closest('tab-group, zen-folder'))) return false;
+                    if (isForeignContainer(tab.closest(CONTAINER_SELECTOR))) return false;
                     // Exclude internal/settings pages from sorting
                     const url = tab.linkedBrowser?.currentURI?.spec || '';
                     if (url.startsWith('about:') || url.startsWith('chrome:') || url.startsWith('moz-extension:')) return false;
@@ -1524,12 +1789,12 @@ Output:`;
                             // then and looks like it picks a colour twice.
                             newGroupsToColor.push(newGroup);
                         } else {
-                            const fallback = findGroupElement(topic, currentWorkspaceId);
+                            const fallback = findGroupElement(topic);
                             if (fallback?.isConnected) existingGroupElements.set(topic, fallback);
                         }
                     } catch (e) {
                         console.error(`[ZenTabsOrganiser] Error creating group "${topic}":`, e);
-                        const fallback = findGroupElement(topic, currentWorkspaceId);
+                        const fallback = findGroupElement(topic);
                         if (fallback?.isConnected) existingGroupElements.set(topic, fallback);
                     }
                 }
@@ -1547,11 +1812,12 @@ Output:`;
             // --- Clean up empty groups left behind after re-sort ---
             later(() => {
                 try {
-                    const wsGroups = document.querySelectorAll(
-                        `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${currentWorkspaceId}"]),
-                         ${GROUP_SELECTOR}[zen-workspace-id="${currentWorkspaceId}"]:not(:has(tab))`
-                    );
-                    for (const group of wsGroups) {
+                    const ws = activeWorkspaceId();
+                    const staleGroups = document.querySelectorAll(ws
+                        ? `${GROUP_SELECTOR}:has(tab[zen-workspace-id="${ws}"]),
+                           ${GROUP_SELECTOR}[zen-workspace-id="${ws}"]:not(:has(tab))`
+                        : GROUP_SELECTOR);
+                    for (const group of staleGroups) {
                         const tabs = group.querySelectorAll('tab');
                         if (tabs.length === 0 && group.isConnected) {
                             console.log(`[ZenTabsOrganiser] Removing empty group "${group.getAttribute('label')}"`);
@@ -1568,23 +1834,20 @@ Output:`;
             console.error('[ZenTabsOrganiser] Sort error:', error);
         } finally {
             isSorting = false;
-            syncTabRadius();
+            syncTabMetrics();
 
-            // Always auto-assign colors & icons to ALL groups in current workspace
+            // Always auto-assign colors & icons to ALL groups in the strip in view
             try {
-                const wsId = window.gZenWorkspaces?.activeWorkspace;
-                if (wsId) {
-                    const allGroups = new Map();
-                    document.querySelectorAll(`${GROUP_SELECTOR}:has(tab[zen-workspace-id="${wsId}"])`).forEach(g => {
-                        const lbl = g.getAttribute('label');
-                        if (lbl) allGroups.set(lbl, g);
-                    });
-                    if (allGroups.size > 0) {
-                        later(() => {
-                            autoAssignColors(allGroups);
-                            autoAssignIcons(allGroups);
-                        }, 500);
-                    }
+                const allGroups = new Map();
+                document.querySelectorAll(scopedGroupSelector()).forEach(g => {
+                    const lbl = g.getAttribute('label');
+                    if (lbl) allGroups.set(lbl, g);
+                });
+                if (allGroups.size > 0) {
+                    later(() => {
+                        autoAssignColors(allGroups);
+                        autoAssignIcons(allGroups);
+                    }, 500);
                 }
             } catch (e) {
                 console.warn('[ZenTabsOrganiser] Auto-assign error:', e);
@@ -1610,15 +1873,21 @@ Output:`;
 
     const clearTabs = () => {
         try {
-            const currentWorkspaceId = window.gZenWorkspaces?.activeWorkspace;
-            if (!currentWorkspaceId) return;
+            // Same guard as Sort, and it matters more here: without it, a Zen
+            // window whose workspace id is still "" would have Clear close
+            // loose tabs in every workspace at once.
+            if (workspacesNotReady()) {
+                console.warn('[ZenTabsOrganiser] No active workspace yet — not clearing');
+                return;
+            }
             const tabsToClose = [];
 
             for (const tab of gBrowser.tabs) {
-                const sameWs = tab.getAttribute('zen-workspace-id') === currentWorkspaceId;
+                // Zen: the active workspace only. Firefox: this window's strip.
+                const sameWs = inActiveScope(tab);
                 // A tab counts as grouped if it sits in ANY container — one of our
                 // groups, a Zen folder, or a split view. Clear takes loose tabs only.
-                const inGroup = !!tab.closest('tab-group, zen-folder');
+                const inGroup = !!tab.closest(CONTAINER_SELECTOR);
                 if (sameWs && !tab.selected && !tab.pinned && !inGroup && !tab.hasAttribute('zen-empty-tab') && tab.isConnected) {
                     tabsToClose.push(tab);
                 }
@@ -1670,33 +1939,100 @@ Output:`;
         }
     }
 
-    /** Find all separator elements regardless of Zen version class name */
+    // Zen draws a row under the pinned tabs — .pinned-tabs-container-separator,
+    // one per workspace — and this mod hangs its buttons in it. Firefox has no
+    // such row: between the pinned grid and the tab list there is only
+    // #vertical-pinned-tabs-splitter, a real <splitter> the user drags to
+    // resize the pinned area, which is no place to put buttons. So build the
+    // row instead.
+    //
+    // It is a child of #tabbrowser-tabs rather than of #tabbrowser-arrowscrollbox
+    // on purpose: MozTabbrowserTabs.allTabs is built from
+    // `arrowScrollbox.children` with the last one popped off as the periphery,
+    // so any foreign node in there is read as a tab — or displaces the pop and
+    // makes the periphery one. #tabbrowser-tabs' own children are never walked
+    // that way.
+    const SYNTHETIC_HOST_ID = 'zen-tidy-host-row';
+
+    function ensureSyntheticHost() {
+        const tabsEl = document.getElementById('tabbrowser-tabs');
+        if (!tabsEl) return null;
+
+        // Only the vertical strip is a column with room for a row of its own.
+        // Horizontally the buttons go next to the new-tab button instead.
+        if (tabsEl.getAttribute('orient') !== 'vertical') {
+            document.getElementById(SYNTHETIC_HOST_ID)?.remove();
+            return null;
+        }
+
+        let host = document.getElementById(SYNTHETIC_HOST_ID);
+        if (!host) {
+            try {
+                host = window.MozXULElement.parseXULToFragment(
+                    `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true">
+                       <toolbarseparator flex="1"/>
+                     </hbox>`
+                ).firstChild;
+            } catch (e) {
+                console.error('[ZenTabsOrganiser] Could not build the button row:', e);
+                return null;
+            }
+        }
+
+        // Sit directly above the tab list, wherever Firefox has moved the strip
+        // to — the sidebar, the titlebar, a customize-mode preview.
+        //
+        // Positioned against the sibling, never through tabsEl. MozTabbrowserTabs
+        // overrides BOTH insertion methods (fx tabs.js):
+        //     appendChild(tab) { return this.insertBefore(tab, null); }
+        //     insertBefore(tab, node) { if (node == null) node = this.arrowScrollbox.lastChild; ... }
+        // so `tabsEl.appendChild(host)` would put the row INSIDE
+        // #tabbrowser-arrowscrollbox, right before the periphery — the exact
+        // placement the comment above exists to avoid, where allTabs() reads it
+        // as a tab and Clear would try to close it.
+        const anchor = document.getElementById('tabbrowser-arrowscrollbox');
+        if (anchor?.parentElement !== tabsEl) {
+            // No anchor to sit against. Better no button row than one in the
+            // tab list, so stand down until the strip is built.
+            return null;
+        }
+        if (host.nextElementSibling !== anchor) anchor.before(host);
+        return host;
+    }
+
+    /** Every element this mod may hang its buttons in, on either browser. */
     function getSeparators() {
-        // Try both class names used across Zen versions
-        let seps = document.querySelectorAll('.pinned-tabs-container-separator');
-        if (seps.length === 0) seps = document.querySelectorAll('.vertical-pinned-tabs-container-separator');
-        return seps;
+        // Both class names Zen has used across versions.
+        const zenSeparators = document.querySelectorAll(
+            '.pinned-tabs-container-separator, .vertical-pinned-tabs-container-separator');
+        if (zenSeparators.length) return Array.from(zenSeparators);
+
+        const synthetic = ensureSyntheticHost();
+        if (synthetic) return [synthetic];
+
+        // A Zen build whose separator has not appeared yet: the row holding the
+        // new-tab button is the only thing left to fall back to.
+        //
+        // Firefox is deliberately excluded. There that row is the tail of the
+        // horizontal tab strip, and .zen-tidy-host would turn it into a 24px
+        // right-aligned box with the + button crushed inside it. On Firefox
+        // this mod's buttons want vertical tabs, and say so once below rather
+        // than damaging the strip that is there.
+        if (!isZen()) return [];
+        const periphery = document.querySelector('#tabbrowser-arrowscrollbox-periphery');
+        return periphery ? [periphery] : [];
     }
 
     function addButtonsToAllSeparators() {
-        const separators = getSeparators();
-        if (separators.length > 0) {
-            separators.forEach(sep => {
-                sep.classList.add('zen-tidy-host'); // marker class for our CSS
-                ensureButtonsExist(sep);
-            });
-        } else {
-            const periphery = document.querySelector('#tabbrowser-arrowscrollbox-periphery');
-            if (periphery && !periphery.querySelector('#zen-tidy-sort-button')) {
-                periphery.classList.add('zen-tidy-host');
-                ensureButtonsExist(periphery);
-            }
+        for (const host of getSeparators()) {
+            host.classList.add('zen-tidy-host'); // marker class for our CSS
+            ensureButtonsExist(host);
         }
     }
     function setupCommandsAndListener() {
-        const cmdSet = document.querySelector('commandset#zenCommandSet');
+        const cmdSet = commandSetElement();
         if (!cmdSet) {
-            console.warn('[ZenTabsOrganiser] zenCommandSet not found');
+            console.warn('[ZenTabsOrganiser] no commandset to attach to');
             return;
         }
 
@@ -1739,6 +2075,60 @@ Output:`;
     //  Workspace hooks (re-inject buttons on switch)
     // ==========================================
 
+    // Firefox has no workspaces to hook, but it does move and rebuild the tab
+    // strip: toggling vertical tabs re-parents #tabbrowser-tabs, and the
+    // pinned area comes and goes. Watch for that instead, so the button row
+    // this mod builds is put back wherever the strip ends up.
+    function setupTabStripHooks() {
+        if (isZen()) return; // Zen's own hooks below already cover this
+        const tabsEl = document.getElementById('tabbrowser-tabs');
+        if (!tabsEl) return;
+
+        let pending = null;
+        const refresh = () => {
+            pending = null;
+            addButtonsToAllSeparators();
+            syncTabMetrics();
+        };
+        const observer = new MutationObserver(() => {
+            // Inserting the row mutates the very subtree being watched, so
+            // coalesce: without this the observer chases its own writes.
+            if (pending !== null) return;
+            pending = later(refresh, 150);
+        });
+        observer.observe(tabsEl, {
+            childList: true,
+            attributes: true,
+            attributeFilter: ['orient', 'expanded'],
+        });
+        onCleanup(() => {
+            observer.disconnect();
+            clearTracked(pending, 'timeout');
+        });
+    }
+
+    // Firefox toggles a group only when the click lands on the label itself —
+    // tabgroup.js on_click compares against its private #labelElement — so a
+    // click on the icon this mod injects beside it does nothing at all. Zen's
+    // patched version accepts the whole label container, and that is the
+    // behaviour worth matching.
+    function setupIconClickFallback() {
+        if (isZen()) return;
+        const container = gBrowser?.tabContainer;
+        if (!container) return;
+        const onClick = (event) => {
+            if (event.button !== 0) return;
+            if (!event.target?.closest?.(`.${ICON_HOST_CLASS}`)) return;
+            const group = event.target.closest(GROUP_SELECTOR);
+            if (!group) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try { group.collapsed = !group.collapsed; } catch {}
+        };
+        container.addEventListener('click', onClick, true);
+        onCleanup(() => container.removeEventListener('click', onClick, true));
+    }
+
     function setupZenWorkspaceHooks() {
         if (typeof gZenWorkspaces === 'undefined') return;
         if (gZenWorkspaces._zenTidyHooksApplied) return;
@@ -1761,7 +2151,7 @@ Output:`;
                 try { gZenWorkspaces._zenTidyOriginals.updateTabsContainers.apply(gZenWorkspaces, args); } catch {}
             }
             later(addButtonsToAllSeparators, 150);
-            later(syncTabRadius, 150);
+            later(syncTabMetrics, 150);
         };
 
         // Sine can unload the mod while the browser stays open — put the
@@ -1792,6 +2182,9 @@ Output:`;
     function removeButtonsAndHosts() {
         document.querySelectorAll('#zen-tidy-sort-button, #zen-tidy-clear-button')
             .forEach(el => el.remove());
+        // The row itself is only ours on Firefox; Zen's separator is Zen's, so
+        // it just loses the marker class.
+        document.getElementById(SYNTHETIC_HOST_ID)?.remove();
         document.querySelectorAll('.zen-tidy-host')
             .forEach(el => el.classList.remove('zen-tidy-host', 'separator-is-sorting'));
         document.querySelectorAll('.tab-is-sorting')
@@ -1807,11 +2200,17 @@ Output:`;
             checkCount++;
             const sepOk = !!document.querySelector('.pinned-tabs-container-separator, .vertical-pinned-tabs-container-separator');
             const periOk = !!document.querySelector('#tabbrowser-arrowscrollbox-periphery');
-            const cmdOk = !!document.querySelector('commandset#zenCommandSet');
+            const stripOk = !!document.getElementById('tabbrowser-tabs');
+            const cmdOk = !!commandSetElement();
             const gbOk = typeof gBrowser !== 'undefined' && gBrowser.tabContainer;
-            const wsOk = typeof gZenWorkspaces !== 'undefined' && typeof gZenWorkspaces.activeWorkspace !== 'undefined';
+            // Zen builds a workspace before its strip is usable, so wait for it
+            // there. Plain Firefox has nothing of the sort — and waiting for it
+            // anyway is what used to make this script give up after 30 seconds
+            // on every Firefox window, buttons and all.
+            const wsOk = !isZen() ||
+                (typeof gZenWorkspaces !== 'undefined' && typeof gZenWorkspaces.activeWorkspace !== 'undefined');
 
-            if (gbOk && cmdOk && (sepOk || periOk) && wsOk) {
+            if (gbOk && cmdOk && (sepOk || periOk || stripOk) && wsOk) {
                 clearTracked(interval, 'interval');
                 const setup = () => {
                     if (destroyed) return;
@@ -1820,11 +2219,20 @@ Output:`;
                         setupCommandsAndListener();
                         setupGroupContextMenu();
                         addButtonsToAllSeparators();
+                        if (!isZen() &&
+                            document.getElementById('tabbrowser-tabs')?.getAttribute('orient') !== 'vertical') {
+                            console.log('[ZenTabsOrganiser] Horizontal tabs: the Sort and Clear buttons need ' +
+                                'vertical tabs — right-click the tab strip and choose "Turn on Vertical Tabs", ' +
+                                'or set Browser layout → Vertical tabs in about:preferences.');
+                        }
                         onCleanup(removeButtonsAndHosts);
                         onCleanup(removeOwnGroupIcons);
                         onCleanup(() => document.documentElement.style.removeProperty(RADIUS_VAR));
                         onCleanup(() => { localEngines = null; });
+                        setupUserColorHandover();
+                        setupIconClickFallback();
                         setupZenWorkspaceHooks();
+                        setupTabStripHooks();
 
                         // --- Restore colours and icons once the tab strip settles ---
                         // Zen's session restore can still be creating tab-group
@@ -1844,7 +2252,7 @@ Output:`;
                                 clearTracked(settleTimer, 'timeout');
                                 clearTracked(ceilingTimer, 'timeout');
                                 observer.disconnect();
-                                syncTabRadius();
+                                syncTabMetrics();
                                 restoreColors();
                                 restoreIcons();
                             };
@@ -1871,7 +2279,7 @@ Output:`;
                 else later(setup, 500);
             } else if (checkCount > maxChecks) {
                 clearTracked(interval, 'interval');
-                console.error(`[ZenTabsOrganiser] Failed to init after ${maxChecks}s`, { gbOk, cmdOk, sepOk, periOk, wsOk });
+                console.error(`[ZenTabsOrganiser] Failed to init after ${maxChecks}s`, { gbOk, cmdOk, sepOk, periOk, stripOk, wsOk });
             }
         }, 1000);
     }

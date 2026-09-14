@@ -1,4 +1,5 @@
-/* ==== Zen Tabs Organiser — Sine mod for Zen 1.21+ ==== */
+/* ==== Zen Tabs Organiser — Sine mod for Zen 1.21+ and Firefox 140+ ==== */
+/* Written against Firefox 156 and Zen 1.22 (Firefox 155). */
 /* Declared as `style.chrome` in theme.json; Sine @imports it into its
    sine-mods/chrome.css bundle and loads it as a user sheet. */
 
@@ -222,13 +223,18 @@ tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label 
 }
 
 /* A group's painted box lines up with an ordinary tab's, on both edges.
-   Zen insets a tab's visible box with
-     .tab-background { margin-inline: var(--tab-margin-block) }
-   and separately indents a group's direct children by --space-medium.
-   Only the first is wanted: the indent is dropped so a group starts where
-   a tab starts rather than stepping in from it. The group's own tabs then
-   sit that same inset inside the group's background, which is what makes
-   the tint read as holding them. */
+   Both browsers inset a tab's visible box, and separately indent a group's
+   direct children by --space-medium. Only the first is wanted: the indent is
+   dropped so a group starts where a tab starts rather than stepping in from
+   it. The group's own tabs then sit that same inset inside the group's
+   background, which is what makes the tint read as holding them.
+
+   The two browsers keep that inset in different variables — Zen in
+   --tab-margin-block (with --tab-inner-inline-margin zeroed), Firefox the
+   other way round — so this rule names Zen's and the FIREFOX section
+   overrides it with Firefox's. An earlier version had the script measure the
+   value off a live tab instead; see syncTabMetrics() for the three separate
+   ways that went wrong. Each browser already names it correctly. */
 tab-group:not([split-view-group]) > .tab-group-label-container,
 tab-group:not([split-view-group]) > .tab-group-container {
   margin-inline: var(--tab-margin-block) !important;
@@ -312,6 +318,187 @@ tab-group:not([split-view-group]) > .tab-group-line {
 }
 
 /* ================================================================
+   FIREFOX
+
+   Everything above is written against the markup Zen patches into
+   Firefox's. The two differ in the group, and only in the group:
+
+     Zen       <tab-group>
+                 <vbox class="tab-group-label-container">
+                   <label class="tab-group-label"/>
+                 <div class="tab-group-container">      <- the tabs
+                 <vbox class="tab-group-overflow-count-container">
+
+     Firefox   <tab-group>                              display: contents
+                 <vbox class="tab-group-label-container">
+                   <vbox class="tab-group-label-hover-highlight">
+                     <label class="tab-group-label"/>
+                 <html:slot/>
+                 <vbox class="tab-group-overflow-count-container">
+                 <tab .../>                             <- the tabs, right here
+
+   Three consequences drive every rule below.
+
+   - There is no .tab-group-container in Firefox, so every rule above
+     that anchors on one matches nothing here. That is deliberate, and
+     it is also how the reverse is arranged: the guard
+     `:not(:has(> .tab-group-container))` keeps everything below out of
+     a Zen window, without the stylesheet having to be told which
+     browser it is in.
+
+   - The COLLAPSE FALLBACK at the top of this file is not missed.
+     Firefox's own rule
+       #tabbrowser-tabs[orient="vertical"] tab-group[collapsed]
+         > .tabbrowser-tab:not([visuallyselected], [multiselected])
+       { display: none }
+     is a child combinator, and here the tabs really are children — the
+     very case that comment explains Zen does not have. Firefox hides
+     them itself; the fallback would only be a second opinion.
+
+   - `tab-group { display: contents }` means the group element has no
+     box of its own. Nothing below tries to give it one. Turning it into
+     a flex container would hand the group a stacking context and a
+     single flex item where Firefox's tab drag-and-drop measures rows,
+     so the body tint goes on the rows instead, which is the only box
+     that is actually there.
+   ================================================================ */
+
+/* --- The label, one level deeper ---
+   Firefox wraps the label in .tab-group-label-hover-highlight to draw
+   the hover shadow of a collapsed group. The header is a flex row, so
+   the wrapper has to behave as one item of that row rather than as the
+   full-width vbox it is — otherwise it hands the label a stretched box,
+   which is where Firefox's `text-align: center` on the title suddenly
+   becomes visible and the name drifts away from its icon. The hover
+   shadow goes with it: the header already lights up on hover, above.
+
+   The auto end margin is the load-bearing one. The header container is
+   a <vbox pack="center">, and xul.css turns that into
+   `justify-content: center !important` — as a UA sheet, so a user sheet
+   cannot outrank it. In Zen that never shows, because .tab-group-label
+   is a direct child and its own `margin-inline-end: auto` eats the free
+   space first. Here the label is a child of this wrapper instead, so
+   its auto margin is spent one level too deep and the icon and title
+   end up centred as a pair, floating in the middle of the row. An auto
+   margin resolves before free space is distributed, whatever
+   justify-content says, so the fix is to put one back at this level.
+
+   Only while the sidebar is expanded. Collapsed, this wrapper carries
+   the margin that centres a group's one-letter square, and that square
+   is all there is to centre. */
+#tabbrowser-tabs[expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container > .tab-group-label-hover-highlight {
+  display: flex !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  margin-block: 0 !important;
+  margin-inline-start: 0 !important;
+  margin-inline-end: auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* With the box above sized to its content, Firefox's `text-align: center`
+   and `max-width: -moz-available` on the title have nothing to centre in
+   — but say so outright, so a theme that stretches the wrapper cannot
+   bring the drift back. */
+#tabbrowser-tabs[expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container .tab-group-label {
+  text-align: start !important;
+  max-width: 100% !important;
+}
+
+/* Collapsed sidebar: the row is one 24px square holding the group's
+   first letter, and there is no room beside it. The icon steps aside
+   rather than squeezing the letter out of its own square. */
+#tabbrowser-tabs[orient="vertical"]:not([expanded])
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .zto-group-icon-container {
+  display: none !important;
+}
+
+/* The header inset, in Firefox's own currency. The shared rule above names
+   --tab-margin-block, which is Zen's word for this; Firefox puts a tab's
+   horizontal inset in --tab-inner-inline-margin and uses --tab-margin-block
+   for the vertical one, so without this the header would sit at the wrong
+   inset and stop lining up with the tab rows it holds. */
+#tabbrowser-tabs[orient="vertical"]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container {
+  margin-inline: var(--tab-inner-inline-margin, 0px) !important;
+}
+
+/* --- Firefox's own group line ---
+   Firefox underlines a group with a 2px rail of its own: an ::after on
+   the label and counter containers, and a .tab-group-line inside every
+   grouped tab's .tab-background. This design draws its own rail in the
+   background layer, so the native one is turned off. Zen hides
+   .tab-group-line globally in zen-folders.css, which is why the rule
+   further up this file — written for a child that only Zen has — never
+   had to do anything.
+
+   Scoped to the expanded vertical strip, exactly like the tint below that
+   replaces it. Unscoped, a horizontal strip and a collapsed sidebar lost
+   Firefox's own group indication and got nothing in its place, leaving
+   grouped tabs there with LESS grouping than stock Firefox shows. */
+#tabbrowser-tabs[orient="vertical"][expanded] tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container::after,
+#tabbrowser-tabs[orient="vertical"][expanded] tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-overflow-count-container::after,
+#tabbrowser-tabs[orient="vertical"][expanded] tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-line {
+  display: none !important;
+}
+
+/* --- Body: the tint the missing container cannot carry ---
+   Painted on the tab rows themselves. They are contiguous — the visible
+   gap between two tabs is .tab-background's own margin-block, inside
+   the row — so the tint reads as one slab rather than as stripes.
+
+   The inline geometry is a swap, not a shift: the row takes the gutter
+   .tab-background used to have and .tab-background takes none, so the
+   painted tab lands exactly where it did while the tint now spans the
+   full width of the group. The same declaration overrides Firefox's
+     #tabbrowser-tabs[orient="vertical"][expanded]
+       tab-group > .tabbrowser-tab { margin-inline-start: var(--space-medium) }
+   group indent, which would otherwise step the rows in from the header.
+
+   Scoped to the expanded vertical strip on purpose: a collapsed sidebar
+   is a column of icon squares and a horizontal strip is a different
+   layout altogether, and neither is what this design is for. */
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)):not([collapsed]) > .tabbrowser-tab {
+  margin-inline: var(--tab-inner-inline-margin, 0px) !important;
+  background-color: var(--zto-body-tint) !important;
+  background-image: var(--zto-rail-image) !important;
+  background-repeat: no-repeat !important;
+}
+
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)):not([collapsed])
+  > .tabbrowser-tab > .tab-stack > .tab-background {
+  margin-inline: 0 !important;
+}
+
+/* The last row closes the group off, mirroring the header's top corners.
+   :not([collapsed]) throughout the block above and here: Firefox keeps the
+   active tab of a collapsed group on screen, and a lone tinted row with a
+   rounded-off bottom under a standalone header pill reads as a group that
+   failed to close rather than as one that did. */
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)):not([collapsed]) > .tabbrowser-tab:last-of-type {
+  border-end-start-radius: var(--zto-radius) !important;
+  border-end-end-radius: var(--zto-radius) !important;
+}
+
+/* The "+N" counter Firefox shows beside a collapsed group that still has
+   its active tab on screen. Worth keeping — it says how much is hidden —
+   so it is only brought into the group's own gutter and colour. */
+tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-overflow-count-container {
+  margin-inline: var(--tab-inner-inline-margin, 0px) !important;
+}
+
+tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-overflow-count {
+  color: var(--zto-label-text) !important;
+}
+
+/* ================================================================
    .zen-tab-group-start is NOT decoration — do not hide it.
 
    It is the layout anchor Zen animates to collapse a folder:
@@ -333,7 +520,7 @@ tab-group:not([split-view-group]) > .tab-group-line {
    ================================================================ */
 
 /* Hide Zen's own Clear button only while this mod provides one. */
-@media (-moz-bool-pref: "zen-tabs-organiser.enable_clear") {
+@media -moz-pref("zen-tabs-organiser.enable_clear") {
   .zen-workspace-close-unpinned-tabs-button {
     display: none !important;
   }
@@ -390,11 +577,20 @@ tab-group:not([split-view-group]) > .tab-group-line {
   display: none !important;
 }
 
-@media not (-moz-bool-pref: "zen-tabs-organiser.enable_sort") {
+@media not -moz-pref("zen-tabs-organiser.enable_sort") {
   #zen-tidy-sort-button { display: none !important; }
 }
-@media not (-moz-bool-pref: "zen-tabs-organiser.enable_clear") {
+@media not -moz-pref("zen-tabs-organiser.enable_clear") {
   #zen-tidy-clear-button { display: none !important; }
+}
+
+/* With both buttons off there is nothing left in the row this mod builds
+   on Firefox, and an empty rule line across the sidebar is worse than no
+   row at all. Zen's separator is Zen's own and stays either way. */
+@media not -moz-pref("zen-tabs-organiser.enable_sort") {
+  @media not -moz-pref("zen-tabs-organiser.enable_clear") {
+    #zen-tidy-host-row { display: none !important; }
+  }
 }
 
 /* ============= Separator host ============= */
@@ -416,6 +612,24 @@ tab-group:not([split-view-group]) > .tab-group-line {
 
 .zen-tidy-host * {
   visibility: visible !important;
+}
+
+/* The row this mod builds for itself on Firefox, where Zen already has
+   one under its pinned tabs. Two things Zen's separator brings with it
+   and Firefox's has to be given: the gutter the tabs sit in, and a
+   colour for the rule — Zen paints its own in vertical-tabs.css, and a
+   bare <toolbarseparator> is otherwise invisible here.
+
+   The colour is set through the id rather than .zen-tidy-host so a Zen
+   window keeps whatever Zen painted; the sorting pulse further down
+   names this id too, so that it still outranks this. */
+#zen-tidy-host-row {
+  margin-inline: var(--tab-inner-inline-margin, 0px) !important;
+  flex: none !important;
+}
+
+#zen-tidy-host-row toolbarseparator {
+  background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)) !important;
 }
 
 /* Hide the native separator line, we draw our own below */
@@ -451,7 +665,10 @@ tab-group:not([split-view-group]) > .tab-group-line {
   50%      { opacity: 1; }
 }
 
-.zen-tidy-host.separator-is-sorting toolbarseparator {
+/* The second selector is not redundant: the Firefox row below sets its
+   separator's colour through an id, which would otherwise outrank a class. */
+.zen-tidy-host.separator-is-sorting toolbarseparator,
+#zen-tidy-host-row.separator-is-sorting toolbarseparator {
   background-color: #c4a7e7 !important;
   animation: zenSortingPulse 1.2s ease-in-out infinite !important;
 }
@@ -512,7 +729,11 @@ tab-group:not([split-view-group]) > .tab-group-line {
   }
   .tab-is-sorting .tab-icon-image,
   .tab-is-sorting .tab-label,
-  .zen-tidy-host.separator-is-sorting toolbarseparator {
+  .zen-tidy-host.separator-is-sorting toolbarseparator,
+  /* The id form is not redundant: the Firefox row's pulse is written with an
+     id, which would otherwise outrank a class here and keep animating for
+     someone who asked the browser to stop moving things. */
+  #zen-tidy-host-row.separator-is-sorting toolbarseparator {
     animation: none !important;
   }
 }
