@@ -11,7 +11,7 @@
   },
   {
     "property": "zen-tabs-organiser.enable_clear",
-    "label": "Show the **Clear** button",
+    "label": "Show the **Clear** button — replaces the one the sidebar row already provides (Zen's, or Natsumi's) while it is on",
     "type": "checkbox",
     "defaultValue": true
   },
@@ -80,18 +80,78 @@
     "property": "zen-tabs-organiser.ai_api_key",
     "label": "API Key",
     "type": "string",
-    "placeholder": "Gemini, Mistral, OpenAI — not needed for Local or Ollama"
+    "placeholder": "Gemini, Mistral, OpenAI — not needed for Local or Ollama",
+    "conditions": [
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "1"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "3"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "4"
+        }
+      }
+    ]
   },
   {
     "property": "zen-tabs-organiser.ai_model_name",
     "label": "Model",
     "type": "string",
-    "placeholder": "gpt-4o-mini, gemini-2.0-flash, llama3.2"
+    "placeholder": "gpt-4o-mini, gemini-2.0-flash, llama3.2",
+    "conditions": [
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "1"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "2"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "3"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "4"
+        }
+      }
+    ]
   },
   {
     "property": "zen-tabs-organiser.ai_endpoint",
     "label": "Endpoint",
     "type": "string",
-    "placeholder": "Only for Ollama or OpenAI-compatible"
+    "placeholder": "Only for Ollama or OpenAI-compatible",
+    "conditions": [
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "2"
+        }
+      },
+      {
+        "if": {
+          "property": "zen-tabs-organiser.ai_model",
+          "value": "4"
+        }
+      }
+    ]
   }
 ]

@@ -590,6 +590,19 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   #zen-tidy-clear-button { display: none !important; }
 }
 
+/* A collapsed sidebar is a ~48px rail of icons. The buttons carry text
+   labels, so they do not belong there — the README says they are not shown in
+   that layout, and this is what makes that true. Both selectors are Firefox
+   only: #zen-tidy-host-row is this mod's own row, which no Zen window has, and
+   the second only matches buttons sitting in Natsumi's row, which on Zen they
+   never are because Zen's own separator is picked first. A Zen collapsed
+   sidebar is untouched. */
+#tabbrowser-tabs:not([expanded]) > #zen-tidy-host-row,
+#tabbrowser-tabs:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button,
+#tabbrowser-tabs:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button {
+  display: none !important;
+}
+
 /* With both buttons off this mod's own row is a bare rule and nothing else,
    in a strip where Firefox draws no rule of its own — so it goes. Only this
    mod's row: Zen's separator and Natsumi's clearer are theirs and stay. */
