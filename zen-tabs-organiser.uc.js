@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.7.1
+// @version        3.7.2
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.7.1';
+    const MOD_VERSION = '3.7.2';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1968,10 +1968,17 @@ Output:`;
         let host = document.getElementById(SYNTHETIC_HOST_ID);
         if (!host) {
             try {
+                // No <toolbarseparator> here, unlike Zen's row. Firefox draws
+                // no divider between the pinned tabs and the list while the
+                // sidebar is expanded — #vertical-pinned-tabs-splitter ships
+                // `hidden="true"`, and even shown its rule is
+                // `border-top-color: transparent` under
+                // `#tabbrowser-tabs[expanded]`. A rule of our own is therefore
+                // a line Firefox does not have, and it reads as a second row
+                // stacked under the pinned tabs. Zen genuinely has one, which
+                // is why its separator carries both the rule and the buttons.
                 host = window.MozXULElement.parseXULToFragment(
-                    `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true">
-                       <toolbarseparator flex="1"/>
-                     </hbox>`
+                    `<hbox id="${SYNTHETIC_HOST_ID}" class="zen-tidy-host" skipintoolbarset="true"/>`
                 ).firstChild;
             } catch (e) {
                 console.error('[ZenTabsOrganiser] Could not build the button row:', e);
@@ -2206,7 +2213,7 @@ Output:`;
     }
 
     function initializeScript() {
-        console.log('[ZenTabsOrganiser] loading…');
+        console.log(`[ZenTabsOrganiser] v${MOD_VERSION} loading…`);
         let checkCount = 0;
         const maxChecks = 30;
 
