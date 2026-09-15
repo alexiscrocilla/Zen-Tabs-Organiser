@@ -29,7 +29,7 @@ Turn on vertical tabs first — right-click the tab strip and choose *Turn on Ve
 
 The **expanded vertical sidebar** is the layout this mod is designed for, and the only one where it restyles groups. In a horizontal strip or a collapsed sidebar it leaves the browser's own tab-group appearance alone rather than half-replacing it.
 
-The **Sort** and **Clear** buttons follow Firefox's own convention for a collapsed sidebar and keep their icon while dropping the words, the way the New Tab button does.
+The **Sort** and **Clear** buttons belong to the expanded sidebar and are not shown in a collapsed rail — that column is Firefox's own and this mod adds nothing to it. A collapsed group still reads as one there: Firefox draws its label as a solid chip in the group's colour, which this mod flattens only in the expanded view, where the header band already says the same thing.
 
 What differs between the two browsers:
 
