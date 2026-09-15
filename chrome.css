@@ -446,50 +446,60 @@ tab-group:not([split-view-group]) > .tab-group-line {
      that is actually there.
    ================================================================ */
 
-/* --- The label, one level deeper ---
-   Firefox wraps the label in .tab-group-label-hover-highlight to draw
-   the hover shadow of a collapsed group. The header is a flex row, so
-   the wrapper has to behave as one item of that row rather than as the
-   full-width vbox it is — otherwise it hands the label a stretched box,
-   which is where Firefox's `text-align: center` on the title suddenly
-   becomes visible and the name drifts away from its icon. The hover
-   shadow goes with it: the header already lights up on hover, above.
+/* --- The label fills the header ---
+   Firefox binds every interaction a group header has to the label alone:
 
-   The auto end margin is the load-bearing one. The header container is
-   a <vbox pack="center">, and xul.css turns that into
-   `justify-content: center !important` — as a UA sheet, so a user sheet
-   cannot outrank it. In Zen that never shows, because .tab-group-label
-   is a direct child and its own `margin-inline-end: auto` eats the free
-   space first. Here the label is a child of this wrapper instead, so
-   its auto margin is spent one level too deep and the icon and title
-   end up centred as a pair, floating in the middle of the row. An auto
-   margin resolves before free space is distributed, whatever
-   justify-content says, so the fix is to put one back at this level.
+     this.#labelElement.addEventListener("click", this);
+     this.#labelElement.addEventListener("contextmenu", ...);
 
-   Only while the sidebar is expanded. Collapsed, this wrapper carries
-   the margin that centres a group's one-letter square, and that square
-   is all there is to centre. */
+   and tabs.js pushes `child.labelElement` into the list of elements its
+   drag-and-drop measures. Nothing is bound to the container. So a header
+   painted across the whole row answers on the label's box and nowhere
+   else: toggle, context menu and drag all stop at the edge of the text.
+
+   A click can be picked up from the container in script. A dragstart
+   cannot be forwarded anywhere useful. The fix that serves all three at
+   once is not to intercept them but to make the label genuinely be the
+   band — then every handler Firefox binds lands wherever the pointer
+   does, and none of them has to be reimplemented here.
+
+   So the wrapper takes the row's free space instead of hugging its
+   content, and the label takes the wrapper's.
+
+   This also settles the drift this block used to hold off with an auto
+   end margin. The header is a <vbox pack="center">, which xul.css turns
+   into `justify-content: center !important` — a UA declaration a user
+   sheet cannot outrank — and in Zen the label's own auto margin absorbs
+   the free space before it applies, while here the label sits one level
+   deeper inside this wrapper and its margin is spent too late, leaving
+   icon and title centred as a pair. An auto margin resolved that by
+   eating the free space. Filling the row removes the free space
+   altogether, so justify-content has nothing left to centre and the
+   question does not arise. `text-align: start` on the title then keeps
+   it against its icon.
+
+   Only while the sidebar is expanded. Collapsed, the row is one square
+   holding the group's first letter, and that square is all there is. */
 #tabbrowser-tabs[expanded]
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container > .tab-group-label-hover-highlight {
   display: flex !important;
-  flex: 0 1 auto !important;
+  flex: 1 1 auto !important;
   min-width: 0 !important;
   margin-block: 0 !important;
-  margin-inline-start: 0 !important;
-  margin-inline-end: auto !important;
+  margin-inline: 0 !important;
   padding: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-/* With the box above sized to its content, Firefox's `text-align: center`
-   and `max-width: -moz-available` on the title have nothing to centre in
-   — but say so outright, so a theme that stretches the wrapper cannot
-   bring the drift back. */
+/* The label takes the wrapper in turn, overriding Firefox's own
+   `max-width: 10em` which would otherwise stop it partway across a wide
+   sidebar and leave the rest of the band dead again. */
 #tabbrowser-tabs[expanded]
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container .tab-group-label {
+  flex: 1 1 auto !important;
   text-align: start !important;
-  max-width: 100% !important;
+  max-width: none !important;
 }
 
 /* Collapsed sidebar: the row is one 24px square holding the group's
