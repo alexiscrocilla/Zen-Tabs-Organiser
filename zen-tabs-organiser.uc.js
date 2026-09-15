@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           Zen Tabs Organiser
 // @description    Sort tabs into groups using AI or domain (Sine mod)
-// @version        3.7.7
+// @version        3.8.0
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 //
@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.7.7';
+    const MOD_VERSION = '3.8.0';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1923,7 +1923,7 @@ Output:`;
         if (!container.querySelector('#zen-tidy-sort-button')) {
             try {
                 const frag = window.MozXULElement.parseXULToFragment(
-                    `<toolbarbutton id="zen-tidy-sort-button" command="cmd_zenTidySort" label="🧹 Sort" tooltiptext="Sort tabs into groups (AI or domain)"/>`
+                    `<toolbarbutton id="zen-tidy-sort-button" command="cmd_zenTidySort" label="🧹 Sort" image="chrome://browser/skin/sort.svg" tooltiptext="Sort tabs into groups (AI or domain)"/>`
                 );
                 container.appendChild(frag.firstChild.cloneNode(true));
             } catch (e) { console.error('[ZenTabsOrganiser] Error adding sort button:', e); }
@@ -1932,7 +1932,7 @@ Output:`;
         if (!container.querySelector('#zen-tidy-clear-button')) {
             try {
                 const frag = window.MozXULElement.parseXULToFragment(
-                    `<toolbarbutton id="zen-tidy-clear-button" command="cmd_zenTidyClear" label="🗑️ Clear" tooltiptext="Close ungrouped, non-pinned tabs"/>`
+                    `<toolbarbutton id="zen-tidy-clear-button" command="cmd_zenTidyClear" label="🗑️ Clear" image="chrome://browser/skin/closed-tabs.svg" tooltiptext="Close ungrouped, non-pinned tabs"/>`
                 );
                 container.appendChild(frag.firstChild.cloneNode(true));
             } catch (e) { console.error('[ZenTabsOrganiser] Error adding clear button:', e); }
