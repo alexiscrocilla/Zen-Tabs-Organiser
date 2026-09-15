@@ -152,6 +152,11 @@ Deleting the field is not the fix, and 3.8.3 is the release that proved it. Sine
 
 The release checks enforce it: `updatedAt` has to be present, parseable, later than the one on `main`, current for the commit, and not in the future.
 
+### Dragging a group by its icon does nothing on Firefox
+Deliberate. Firefox binds a group header's click, contextmenu and dragstart to `.tab-group-label` and to nothing else, so the stylesheet makes that label fill the whole tinted band — every one of those bindings then lands wherever the pointer does. The icon this mod injects is a sibling of the label, not part of it, so it falls outside all three. Click and contextmenu have script fallbacks; a `dragstart` cannot be forwarded anywhere useful, so the icon's strip — roughly 40px of a 240px row — does not start a drag. Drag the group from anywhere else in the band.
+
+Putting the icon inside the label would fix it and is not possible: `MozTabbrowserTabGroup.inheritedAttributes` maps `.tab-group-label` to `text=label`, so the label's content is rewritten from the group's `label` attribute on every rename and any child would be wiped. Drawing the icon as a `::before` on the label would also fix it, since a pseudo-element belongs to its originating element for hit-testing — but a pseudo-element can only carry a `mask-image`, which flattens the icon to a single-colour silhouette. Keeping the icon as it renders today was chosen over drag on that strip.
+
 ### Which version is running
 The startup line in the Browser Toolbox console names it — `[ZenTabsOrganiser] v… loading…` — and `ZenTabsOrganiser.version` reports it at any time. Worth checking before reporting that a fix did not work, since Sine does not always pick up an update in a live window.
 
