@@ -480,7 +480,7 @@ tab-group:not([split-view-group]) > .tab-group-line {
 
    Only while the sidebar is expanded. Collapsed, the row is one square
    holding the group's first letter, and that square is all there is. */
-#tabbrowser-tabs[expanded]
+#tabbrowser-tabs[orient="vertical"][expanded]
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container > .tab-group-label-hover-highlight {
   display: flex !important;
   flex: 1 1 auto !important;
@@ -494,12 +494,48 @@ tab-group:not([split-view-group]) > .tab-group-line {
 
 /* The label takes the wrapper in turn, overriding Firefox's own
    `max-width: 10em` which would otherwise stop it partway across a wide
-   sidebar and leave the rest of the band dead again. */
-#tabbrowser-tabs[expanded]
+   sidebar and leave the rest of the band dead again.
+
+   Width alone was not enough, and the three things that kept the band
+   larger than the label are all stated rather than measured:
+
+   - `margin: auto 0` in Firefox's own rule above. An auto block margin
+     shrink-wraps the label vertically and centres it, so it can never
+     reach the full height of a row whose min-height is a tab's. Zeroed
+     here, and `align-self: stretch` answers the `align-items: center`
+     this mod puts on the header.
+
+   - Firefox's `line-height` is the label's own height, which centred the
+     text only while the box was that tall. Stretched, a single line of it
+     would sit against the top, so the line-height becomes the row's.
+     Doing it this way rather than making the label a flex container keeps
+     `text-overflow: ellipsis` working, which needs a block box.
+
+   - the header's `padding-inline`, which the tint paints over but a flex
+     item cannot enter, leaving a dead strip at each edge. It moves to the
+     icon below, which is what it was insetting anyway. */
+#tabbrowser-tabs[orient="vertical"][expanded]
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container .tab-group-label {
   flex: 1 1 auto !important;
+  align-self: stretch !important;
+  margin-block: 0 !important;
+  margin-inline: 0 !important;
+  line-height: var(--tab-min-height) !important;
   text-align: start !important;
   max-width: none !important;
+}
+
+/* Firefox only: the inset moves off the header, so the label can reach
+   its edges. Zen keeps the padding on the header, where its own label is
+   a direct child and fills it already. */
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container {
+  padding-inline: 0 !important;
+}
+
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .zto-group-icon-container {
+  margin-inline-start: var(--tab-inline-padding) !important;
 }
 
 /* Collapsed sidebar: the row is one 24px square holding the group's
