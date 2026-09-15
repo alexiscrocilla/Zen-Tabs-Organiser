@@ -484,6 +484,11 @@ tab-group:not([split-view-group]) > .tab-group-line {
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container > .tab-group-label-hover-highlight {
   display: flex !important;
   flex: 1 1 auto !important;
+  /* The header centres its items, and this wrapper is the item — so stretching
+     the label inside it only ever filled the wrapper's own content height. Both
+     have to stretch or the band keeps a dead strip above and below the text.
+     Measured on a real header at 3.8.6: a 32px band around a 16px label. */
+  align-self: stretch !important;
   min-width: 0 !important;
   margin-block: 0 !important;
   margin-inline: 0 !important;
