@@ -137,6 +137,13 @@ They need vertical tabs, expanded: right-click the tab strip and choose *Turn on
 ### Natsumi's Clear button disappeared
 Expected: this mod joins Natsumi's row rather than adding a second one, and hides the row's own Clear while its own is on. Turn **Show the Clear button** off in the mod's settings to get Natsumi's back.
 
+### The mod does not update
+Sine decides whether an update exists by comparing `updatedAt`, not `version`: `new Date(installed.updatedAt) < new Date(remote.updatedAt)` in its mod manager. It never compares version numbers — those are only ever displayed.
+
+`theme.json` therefore declares **no** `updatedAt`. When the field is absent Sine falls back to the GitHub API and uses the repository's own `updated_at`, which moves on every push, so each release is picked up without anyone having to remember to touch a timestamp. Releases 3.7.6 through 3.8.2 hardcoded it instead, and it never moved: Sine compared the same instant to itself, `<` was false, and no update was ever offered however far the version number climbed.
+
+If the GitHub API is unreachable the field simply stays unset, the comparison against `Invalid Date` is false, and Sine tries again on the next check. Nothing breaks; the update is only deferred.
+
 ### Which version is running
 The startup line in the Browser Toolbox console names it — `[ZenTabsOrganiser] v… loading…` — and `ZenTabsOrganiser.version` reports it at any time. Worth checking before reporting that a fix did not work, since Sine does not always pick up an update in a live window.
 
@@ -152,7 +159,7 @@ git clone https://github.com/alexiscrocilla/Zen-Tabs-Organiser.git
 
 | File | Purpose |
 |------|---------|
-| `theme.json` | Sine manifest and mod metadata |
+| `theme.json` | Sine manifest and mod metadata. Deliberately carries no `updatedAt` — see *The mod does not update* |
 | `zen-tabs-organiser.uc.js` | Sorting, grouping, persistence, and cleanup logic |
 | `chrome.css` | Sidebar controls, group styling, and animations |
 | `preferences.json` | Settings schema displayed by Sine |
@@ -161,11 +168,12 @@ Sine injects the `.uc.js` script into `chrome://browser/content/browser.xhtml`. 
 
 The browser differences are collected in one place each: `isZen()`, `activeWorkspaceId()`, `inActiveScope()`, `workspacesNotReady()` and `scopedGroupSelector()` in the script, and the `FIREFOX` section of `chrome.css`. Detection is by DOM (`commandset#zenCommandSet`), never by user agent. Every rule in that section is guarded with `:not(:has(> .tab-group-container))`, a child only Zen's patched tab groups have, so a Zen window can never match them.
 
-Two rules of thumb learned the hard way, both worth keeping:
+Rules of thumb learned the hard way, all worth keeping:
 - **Do not measure a value the stylesheet itself writes.** An earlier version read a tab's inline inset off `getComputedStyle` and republished it; the Firefox rules zero that same margin inside a group, so after the first sort the measurement fed on its own output. Each browser already names the value in a variable — read that.
 - **`activeWorkspaceId()` returning null does not mean "no workspaces".** On Zen it also means "workspaces exist but none is chosen yet", which is the state of every window at startup. Guard with `workspacesNotReady()` before acting window-wide, or Clear will close tabs across every space.
 - **Before adding anything to the sidebar, look at what is already there — including other mods.** A reported duplicate row was chased through three releases of Firefox's own source before it turned out to be Natsumi's `#natsumi-tabs-clearer`, which inserts at the same position. When an element does not match anything in the browser's source, the question is which other mod is active.
 - **Do not build an element on a rule written for someone else's.** `.zen-tidy-host toolbarseparator` describes the separators Zen and Natsumi already size in their own rows; a bare `<toolbarseparator>` built from nothing kept native behaviour it does not override. This mod's own rule is a plain `<hbox>` with every dimension stated outright.
+- **Check which field the host actually reads before trusting the one you bump.** Five releases shipped with a version number that climbed and an `updatedAt` that did not, and Sine compares only the second. The version was doing nothing but decorating the settings panel. Read the host's source for the comparison it really makes.
 
 ## Contributing
 Bug reports and focused pull requests are welcome. Before opening a pull request:
