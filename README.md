@@ -138,11 +138,19 @@ They need vertical tabs, expanded: right-click the tab strip and choose *Turn on
 Expected: this mod joins Natsumi's row rather than adding a second one, and hides the row's own Clear while its own is on. Turn **Show the Clear button** off in the mod's settings to get Natsumi's back.
 
 ### The mod does not update
-Sine decides whether an update exists by comparing `updatedAt`, not `version`: `new Date(installed.updatedAt) < new Date(remote.updatedAt)` in its mod manager. It never compares version numbers — those are only ever displayed.
+Sine decides whether an update exists by comparing `updatedAt`, not `version`: `new Date(installed.updatedAt) < new Date(remote.updatedAt)` in its mod manager. It never compares version numbers — those only ever get displayed, in the settings row and on the marketplace card.
 
-`theme.json` therefore declares **no** `updatedAt`. When the field is absent Sine falls back to the GitHub API and uses the repository's own `updated_at`, which moves on every push, so each release is picked up without anyone having to remember to touch a timestamp. Releases 3.7.6 through 3.8.2 hardcoded it instead, and it never moved: Sine compared the same instant to itself, `<` was false, and no update was ever offered however far the version number climbed.
+So `updatedAt` **must be refreshed on every release**. Releases 3.7.6 through 3.8.2 pinned it to one instant and never moved it: Sine compared that instant to itself, `<` was false, and no update was offered however far the version climbed.
 
-If the GitHub API is unreachable the field simply stays unset, the comparison against `Invalid Date` is false, and Sine tries again on the next check. Nothing breaks; the update is only deferred.
+Deleting the field is not the fix, and 3.8.3 is the release that proved it. Sine calls the GitHub API only for properties the manifest omits (`description` and `updatedAt`), and on the install path it then reads `githubAPI.description` straight off the result. Its `fetch` helper returns `undefined` for a request that never lands, so with the field missing any network hiccup turns an install into a silent `TypeError` and nothing gets installed at all — while a rate-limited API (60 requests/hour unauthenticated) leaves `updatedAt` unset, `Invalid Date` compares false, and no update is offered either. Both properties present means Sine never needs the API on either path:
+
+| manifest | API ok | API rate-limited | API unreachable |
+|---|---|---|---|
+| pinned and stale | no update | no update | no update |
+| absent (3.8.3) | update | **no update** | **install fails** |
+| pinned and advanced | update | update | update |
+
+The release checks enforce it: `updatedAt` has to be present, parseable, later than the one on `main`, current for the commit, and not in the future.
 
 ### Which version is running
 The startup line in the Browser Toolbox console names it — `[ZenTabsOrganiser] v… loading…` — and `ZenTabsOrganiser.version` reports it at any time. Worth checking before reporting that a fix did not work, since Sine does not always pick up an update in a live window.
@@ -159,7 +167,7 @@ git clone https://github.com/alexiscrocilla/Zen-Tabs-Organiser.git
 
 | File | Purpose |
 |------|---------|
-| `theme.json` | Sine manifest and mod metadata. Deliberately carries no `updatedAt` — see *The mod does not update* |
+| `theme.json` | Sine manifest and mod metadata. Its `updatedAt` must be refreshed every release — see *The mod does not update* |
 | `zen-tabs-organiser.uc.js` | Sorting, grouping, persistence, and cleanup logic |
 | `chrome.css` | Sidebar controls, group styling, and animations |
 | `preferences.json` | Settings schema displayed by Sine |
@@ -174,6 +182,7 @@ Rules of thumb learned the hard way, all worth keeping:
 - **Before adding anything to the sidebar, look at what is already there — including other mods.** A reported duplicate row was chased through three releases of Firefox's own source before it turned out to be Natsumi's `#natsumi-tabs-clearer`, which inserts at the same position. When an element does not match anything in the browser's source, the question is which other mod is active.
 - **Do not build an element on a rule written for someone else's.** `.zen-tidy-host toolbarseparator` describes the separators Zen and Natsumi already size in their own rows; a bare `<toolbarseparator>` built from nothing kept native behaviour it does not override. This mod's own rule is a plain `<hbox>` with every dimension stated outright.
 - **Check which field the host actually reads before trusting the one you bump.** Five releases shipped with a version number that climbed and an `updatedAt` that did not, and Sine compares only the second. The version was doing nothing but decorating the settings panel. Read the host's source for the comparison it really makes.
+- **Removing a field to trigger a fallback buys the fallback's failure modes too.** Dropping `updatedAt` so Sine would read the repository's push time did fix the comparison, and it also made every install depend on `api.github.com` answering — where an unreachable API is a silent `TypeError`, not a graceful skip. Check the paths that read the field, not just the one that compares it.
 
 ## Contributing
 Bug reports and focused pull requests are welcome. Before opening a pull request:
