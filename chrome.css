@@ -510,6 +510,34 @@ tab-group:not([split-view-group]) > .tab-group-line {
   margin-inline: var(--tab-inner-inline-margin, 0px) !important;
 }
 
+/* --- Row rhythm ---
+   Firefox reserves space around every row in the strip, and says so where it
+   declares the variables (tabs.css):
+
+     Space between a tab and the tabs above and below it, outside of
+     --tab-margin-block. Anything else that occupies a row in the tab strip
+     (i.e. a tab group label) needs to reserve the same space in order to
+     preserve spacing rhythm.
+
+   A tab carries it as padding on the tab element, outside .tab-background,
+   which is the part that paints. The header above paints on the very element
+   that would carry the padding, so the same space has to be margin: as
+   padding it would sit inside the tint, the band would simply grow, and no
+   gap would appear. That is why the header zeroes padding-block and adds the
+   space here instead.
+
+   Both sidebar states, not just the expanded one. In the collapsed rail this
+   mod paints nothing at all, and this is the one thing Firefox asks of
+   anything occupying a row there — two group chips were touching without it
+   while the tabs around them were not. Zen never reaches this rule, and
+   defines neither variable, so the fallbacks keep it inert there twice over. */
+#tabbrowser-tabs[orient="vertical"]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container {
+  margin-block:
+    calc(var(--tab-margin-block, 0px) + var(--tab-padding-block-start, 0px))
+    calc(var(--tab-margin-block, 0px) + var(--tab-padding-block-end, 0px)) !important;
+}
+
 /* --- Firefox's own group line ---
    Firefox underlines a group with a 2px rail of its own: an ::after on
    the label and counter containers, and a .tab-group-line inside every
