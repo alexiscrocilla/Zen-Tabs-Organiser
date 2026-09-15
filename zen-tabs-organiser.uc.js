@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.8.6';
+    const MOD_VERSION = '3.8.7';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -2192,6 +2192,25 @@ Output:`;
         };
         container.addEventListener('click', onClick, true);
         onCleanup(() => container.removeEventListener('click', onClick, true));
+
+        // Same gap, other button. Firefox's contextmenu binding is on the label
+        // too, so a right click anywhere the label does not reach fell through
+        // to the tab strip's own menu — the wrong menu entirely, rather than
+        // nothing. Unlike the click binding this one has no identity check, so
+        // it fires for a descendant; only a sibling like the icon misses it.
+        const onHeaderContextMenu = (event) => {
+            const header = event.target?.closest?.('.tab-group-label-container');
+            if (!header) return;
+            if (event.target.closest('.tab-group-label')) return;
+            const group = header.closest(GROUP_SELECTOR);
+            if (!group || header.parentNode !== group) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try { gBrowser.tabGroupMenu?.openEditModal(group); } catch {}
+        };
+        container.addEventListener('contextmenu', onHeaderContextMenu, true);
+        onCleanup(() =>
+            container.removeEventListener('contextmenu', onHeaderContextMenu, true));
     }
 
     function setupZenWorkspaceHooks() {
