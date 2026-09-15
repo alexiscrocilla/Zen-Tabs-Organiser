@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.8.4';
+    const MOD_VERSION = '3.8.5';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -2161,20 +2161,31 @@ Output:`;
         });
     }
 
-    // Firefox toggles a group only when the click lands on the label itself —
-    // tabgroup.js on_click compares against its private #labelElement — so a
-    // click on the icon this mod injects beside it does nothing at all. Zen's
-    // patched version accepts the whole label container, and that is the
-    // behaviour worth matching.
-    function setupIconClickFallback() {
+    // Firefox toggles a group only when the click lands on the label itself:
+    // tabgroup.js on_click tests `event.target === this.#labelElement`, an
+    // identity check that a descendant fails as surely as a sibling does. So
+    // every other part of the header is inert — the icon this mod injects
+    // beside the label, and the tinted band the header is painted on, which is
+    // the container behind them both and by far the largest target of the
+    // three. Zen's patched version accepts the whole label container, and that
+    // is the behaviour worth matching.
+    //
+    // The whole header is therefore claimed here rather than the icon alone.
+    // The listener runs in the capture phase and stops the event there, so the
+    // native handler never also fires: a click on the label itself toggles
+    // once, not twice. Anything not a plain left click is left alone, which
+    // leaves the label's own contextmenu binding untouched.
+    function setupHeaderClickFallback() {
         if (isZen()) return;
         const container = gBrowser?.tabContainer;
         if (!container) return;
         const onClick = (event) => {
             if (event.button !== 0) return;
-            if (!event.target?.closest?.(`.${ICON_HOST_CLASS}`)) return;
-            const group = event.target.closest(GROUP_SELECTOR);
-            if (!group) return;
+            const header = event.target?.closest?.('.tab-group-label-container');
+            if (!header) return;
+            // The group's own header, not one belonging to a group further up.
+            const group = header.closest(GROUP_SELECTOR);
+            if (!group || header.parentNode !== group) return;
             event.preventDefault();
             event.stopPropagation();
             try { group.collapsed = !group.collapsed; } catch {}
@@ -2284,7 +2295,7 @@ Output:`;
                         onCleanup(() => document.documentElement.style.removeProperty(RADIUS_VAR));
                         onCleanup(() => { localEngines = null; });
                         setupUserColorHandover();
-                        setupIconClickFallback();
+                        setupHeaderClickFallback();
                         setupZenWorkspaceHooks();
                         setupTabStripHooks();
 
