@@ -164,8 +164,18 @@ tab-group:not([split-view-group]) {
    uses for one: .tab-background (min-height, margin-block, radius) and
    .tab-content (inline padding). Nothing here is a fixed number, so a
    theme or density setting that moves tabs moves group headers with
-   them. */
-tab-group:not([split-view-group]) > .tab-group-label-container {
+   them.
+
+   Two selectors, one for each browser, because they are wanted in different
+   places. Zen's arm is guarded on .tab-group-container, a child only its
+   patched groups have, so it matches exactly what it always did. Firefox's is
+   gated on the expanded vertical sidebar: a collapsed rail is a column of
+   24px squares that Firefox already centres, and a header band with a tint, a
+   rail and --tab-inline-padding does not fit in one. Standing down there is
+   what the README has always said this mod does. */
+tab-group:not([split-view-group]):has(> .tab-group-container) > .tab-group-label-container,
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container {
   /* Zen declares this as a <vbox>, which stacks vertically. Without this
      the injected icon lands above the title instead of beside it. */
   display: flex !important;
@@ -195,7 +205,9 @@ tab-group:not([split-view-group]) > .tab-group-label-container {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  tab-group:not([split-view-group]) > .tab-group-label-container:hover {
+  tab-group:not([split-view-group]):has(> .tab-group-container) > .tab-group-label-container:hover,
+  #tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container:hover {
     background-color: var(--zto-hover-tint) !important;
   }
 }
@@ -208,7 +220,9 @@ tab-group:not([split-view-group]) > .tab-group-label-container {
    block margins Firefox also sets — any of which a theme can disturb. The
    line box being the full row height is what puts the text in the middle
    of it. */
-tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label {
+tab-group:not([split-view-group]):has(> .tab-group-container) > .tab-group-label-container .tab-group-label,
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container .tab-group-label {
   background: transparent !important;
   color: var(--zto-label-text) !important;
   font-weight: 600 !important;
@@ -220,6 +234,25 @@ tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label 
   /* Spacing before the title is owned by the icon's own
      --tab-icon-end-margin, exactly as it is for a tab. */
   padding-inline: 0 !important;
+}
+
+/* The line-box trick above is Zen's, and on Firefox it puts the title low.
+   Firefox sizes the label itself —
+     #tabbrowser-tabs[orient="vertical"] .tab-group-label { height: var(--tab-group-label-size) }
+   — which is shorter than --tab-min-height, so a line box the height of a tab
+   row overflows it and the glyphs sit below the box's centre, a few pixels
+   under the icon beside them. The icon looked right because it is centred by
+   the container; the text was not, because it was centring itself in a box
+   the wrong size.
+
+   So on Firefox the label stops sizing its own line box and lets the header
+   centre it, which the header is already set up to do (align-items: center,
+   a few rules up). Nothing here depends on a value that has to be guessed. */
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container .tab-group-label {
+  height: auto !important;
+  line-height: normal !important;
+  padding-block: 0 !important;
 }
 
 /* A group's painted box lines up with an ordinary tab's, on both edges.
@@ -235,7 +268,7 @@ tab-group:not([split-view-group]) > .tab-group-label-container .tab-group-label 
    overrides it with Firefox's. An earlier version had the script measure the
    value off a live tab instead; see syncTabMetrics() for the three separate
    ways that went wrong. Each browser already names it correctly. */
-tab-group:not([split-view-group]) > .tab-group-label-container,
+tab-group:not([split-view-group]):has(> .tab-group-container) > .tab-group-label-container,
 tab-group:not([split-view-group]) > .tab-group-container {
   margin-inline: var(--tab-margin-block) !important;
 }
@@ -327,7 +360,8 @@ tab-group:not([split-view-group])[collapsed] {
    whatever its own mod draws. The two extra :has() and :not() clauses also put
    this at (0,5,2) against Natsumi's (0,2,2), which is what decides it: both
    sheets are user origin, so specificity settles it rather than load order. */
-tab-group:not([split-view-group]):not(:has(> .tab-group-container)):has(> .tab-group-label-container > .zto-group-icon-container)
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)):has(> .tab-group-label-container > .zto-group-icon-container)
   > .tab-group-label-container .tab-group-label::before {
   display: none !important;
 }
@@ -339,7 +373,8 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)):has(> .tab-g
    the header removes that constraint, and at 25% the icon just reads white.
    Firefox only, through the same guard as the rest of this section: a Zen
    window keeps the icon it has always had. */
-tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .zto-group-icon {
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .zto-group-icon {
   fill: var(--tab-group-color, currentColor) !important;
   stroke: var(--tab-group-color, currentColor) !important;
 }
@@ -459,7 +494,7 @@ tab-group:not([split-view-group]) > .tab-group-line {
    horizontal inset in --tab-inner-inline-margin and uses --tab-margin-block
    for the vertical one, so without this the header would sit at the wrong
    inset and stop lining up with the tab rows it holds. */
-#tabbrowser-tabs[orient="vertical"]
+#tabbrowser-tabs[orient="vertical"][expanded]
   tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-label-container {
   margin-inline: var(--tab-inner-inline-margin, 0px) !important;
 }
@@ -527,11 +562,13 @@ tab-group:not([split-view-group]) > .tab-group-line {
 /* The "+N" counter Firefox shows beside a collapsed group that still has
    its active tab on screen. Worth keeping — it says how much is hidden —
    so it is only brought into the group's own gutter and colour. */
-tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-overflow-count-container {
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) > .tab-group-overflow-count-container {
   margin-inline: var(--tab-inner-inline-margin, 0px) !important;
 }
 
-tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-overflow-count {
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-overflow-count {
   color: var(--zto-label-text) !important;
 }
 
@@ -627,22 +664,55 @@ tab-group:not([split-view-group]):not(:has(> .tab-group-container)) .tab-group-o
   #zen-tidy-clear-button { display: none !important; }
 }
 
-/* A collapsed sidebar is a ~48px rail of icons. The buttons carry text
-   labels, so they do not belong there — the README says they are not shown in
-   that layout, and this is what makes that true. Both selectors are Firefox
-   only: #zen-tidy-host-row is this mod's own row, which no Zen window has, and
-   the second only matches buttons sitting in Natsumi's row, which on Zen they
-   never are because Zen's own separator is picked first. A Zen collapsed
-   sidebar is untouched. */
-#tabbrowser-tabs:not([expanded]) > #zen-tidy-host-row,
-#tabbrowser-tabs:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button,
-#tabbrowser-tabs:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button {
+/* --- The collapsed rail ---
+   A collapsed sidebar is a ~48px column of icons, and Firefox has one way of
+   putting a button in it: keep the icon, drop the words. Its own new-tab
+   button says so, in tabs.css:
+
+     #tabbrowser-tabs[orient="vertical"]:not([expanded]) & > .toolbarbutton-text {
+       display: none;
+     }
+
+   So these buttons do the same rather than disappearing, which is what an
+   earlier version did. The rule is what makes the icon visible at all — the
+   expanded look is the label's own glyph, so the real icon is hidden above,
+   and here that is reversed.
+
+   Firefox only, twice over: #zen-tidy-host-row is this mod's own row, which no
+   Zen window has, and the second pair only matches buttons sitting in
+   Natsumi's row, which on Zen they never are because Zen's own separator is
+   picked first. A Zen collapsed sidebar is untouched. */
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row {
+  justify-content: center !important;
+  gap: 4px !important;
+  padding: 0 !important;
+}
+
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > .zto-host-rule {
   display: none !important;
+}
+
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > toolbarbutton > .toolbarbutton-text,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button > .toolbarbutton-text,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button > .toolbarbutton-text {
+  display: none !important;
+}
+
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > toolbarbutton > .toolbarbutton-icon,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button > .toolbarbutton-icon,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button > .toolbarbutton-icon {
+  display: flex !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 !important;
+  -moz-context-properties: fill !important;
+  fill: currentColor !important;
 }
 
 /* With both buttons off this mod's own row is a bare rule and nothing else,
    in a strip where Firefox draws no rule of its own — so it goes. Only this
-   mod's row: Zen's separator and Natsumi's clearer are theirs and stay. */
+   mod's row: Zen's separator and Natsumi's clearer are theirs and stay. This
+   still holds in the collapsed rail, where the row has no rule either. */
 @media not -moz-pref("zen-tabs-organiser.enable_sort") {
   @media not -moz-pref("zen-tabs-organiser.enable_clear") {
     #zen-tidy-host-row { display: none !important; }

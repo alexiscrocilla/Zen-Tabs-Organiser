@@ -27,7 +27,9 @@ Runs on **Zen Browser** and on **Firefox** with vertical tabs.
 ### On Firefox
 Turn on vertical tabs first — right-click the tab strip and choose *Turn on Vertical Tabs*, or set **Browser layout → Vertical tabs** in Settings (under **Tabs and browsing** on Firefox 156+, under **General** on older builds). The **Sort** and **Clear** buttons appear in a row under the pinned tabs, the same place they occupy on Zen.
 
-The **expanded vertical sidebar** is the layout this mod is designed for, and the only one it restyles. In a horizontal strip or a collapsed sidebar it leaves the browser's own tab-group appearance untouched rather than half-replacing it, and the buttons are not shown — there is nowhere sensible for them in a row of icons.
+The **expanded vertical sidebar** is the layout this mod is designed for, and the only one where it restyles groups. In a horizontal strip or a collapsed sidebar it leaves the browser's own tab-group appearance alone rather than half-replacing it.
+
+The **Sort** and **Clear** buttons follow Firefox's own convention for a collapsed sidebar and keep their icon while dropping the words, the way the New Tab button does.
 
 What differs between the two browsers:
 
