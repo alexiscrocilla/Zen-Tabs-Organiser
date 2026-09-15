@@ -111,8 +111,19 @@ tab-group:not([split-view-group])[collapsed] > .tab-group-container {
    which only happens because this mod sets it — so this mod owns the
    consequence. It reads as a stray square around the group name, and
    this design does not want it either.
+
+   Only in the expanded sidebar, where the header band already says the row is
+   a group. In a collapsed rail it is the other way round: the label is a 24px
+   square holding one letter, and that chip — a solid fill in the group's
+   colour, with a pale letter and outline — is the only thing telling it apart
+   from an ordinary tab. Flattening it there left a bare letter that read as
+   nothing at all, while an OPEN group in the same rail still looked like one,
+   because the rule that flattens those was scoped in the previous change and
+   this one was missed. Same two arms as the header rules below.
    ================================================================ */
-tab-group:not([split-view-group])[collapsed] > .tab-group-label-container .tab-group-label {
+tab-group:not([split-view-group]):has(> .tab-group-container)[collapsed] > .tab-group-label-container .tab-group-label,
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container))[collapsed] > .tab-group-label-container .tab-group-label {
   outline: none !important;
   background-color: transparent !important;
   box-shadow: none !important;
@@ -665,48 +676,24 @@ tab-group:not([split-view-group]) > .tab-group-line {
 }
 
 /* --- The collapsed rail ---
-   A collapsed sidebar is a ~48px column of icons, and Firefox has one way of
-   putting a button in it: keep the icon, drop the words. Its own new-tab
-   button says so, in tabs.css:
+   Sort and Clear belong to the expanded sidebar and stay there. A ~48px rail
+   is Firefox's own column — pinned tabs, tabs, its new-tab button — and this
+   mod adds nothing to it. An intermediate version shrank the buttons to icons
+   the way Firefox's own new-tab button does; they fit, but it was still one
+   more row in a column with no room to spare.
 
-     #tabbrowser-tabs[orient="vertical"]:not([expanded]) & > .toolbarbutton-text {
-       display: none;
-     }
-
-   So these buttons do the same rather than disappearing, which is what an
-   earlier version did. The rule is what makes the icon visible at all — the
-   expanded look is the label's own glyph, so the real icon is hidden above,
-   and here that is reversed.
+   The buttons keep their real icons regardless, set on the elements and
+   hidden by the rule above while the label's own glyph is showing. They cost
+   nothing, and they are what any future collapsed treatment would need.
 
    Firefox only, twice over: #zen-tidy-host-row is this mod's own row, which no
    Zen window has, and the second pair only matches buttons sitting in
    Natsumi's row, which on Zen they never are because Zen's own separator is
    picked first. A Zen collapsed sidebar is untouched. */
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row {
-  justify-content: center !important;
-  gap: 4px !important;
-  padding: 0 !important;
-}
-
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > .zto-host-rule {
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button,
+#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button {
   display: none !important;
-}
-
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > toolbarbutton > .toolbarbutton-text,
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button > .toolbarbutton-text,
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button > .toolbarbutton-text {
-  display: none !important;
-}
-
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) > #zen-tidy-host-row > toolbarbutton > .toolbarbutton-icon,
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-sort-button > .toolbarbutton-icon,
-#tabbrowser-tabs[orient="vertical"]:not([expanded]) #natsumi-tabs-clearer > #zen-tidy-clear-button > .toolbarbutton-icon {
-  display: flex !important;
-  width: 14px !important;
-  height: 14px !important;
-  margin: 0 !important;
-  -moz-context-properties: fill !important;
-  fill: currentColor !important;
 }
 
 /* With both buttons off this mod's own row is a bare rule and nothing else,
