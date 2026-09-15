@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.8.7';
+    const MOD_VERSION = '3.8.8';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -2204,9 +2204,19 @@ Output:`;
             if (event.target.closest('.tab-group-label')) return;
             const group = header.closest(GROUP_SELECTOR);
             if (!group || header.parentNode !== group) return;
+            // Suppress the native menu only once ours is actually up. The
+            // first version of this called preventDefault first and opened the
+            // editor inside a try/catch, so a failure to open left the right
+            // click doing nothing at all — worse than the wrong menu it was
+            // meant to replace, and on the icon that is exactly what happened.
+            try {
+                gBrowser.tabGroupMenu.openEditModal(group);
+            } catch (e) {
+                console.warn('[ZenTabsOrganiser] group editor did not open', e);
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
-            try { gBrowser.tabGroupMenu?.openEditModal(group); } catch {}
         };
         container.addEventListener('contextmenu', onHeaderContextMenu, true);
         onCleanup(() =>
