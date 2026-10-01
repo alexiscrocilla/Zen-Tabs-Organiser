@@ -20,7 +20,7 @@
     // Single source of truth for the version string. Read once here so
     // the startup log, the public handle and any future use of it can
     // never drift out of sync with each other again.
-    const MOD_VERSION = '3.9.0';
+    const MOD_VERSION = '3.9.1';
 
     // --- Configuration / Preference Keys ---
     const ENABLE_SORT_PREF = "zen-tabs-organiser.enable_sort";
@@ -1138,13 +1138,12 @@ Output:`;
     };
 
     /**
-     * One group colour, written out the way Firefox reads a palette entry.
-     * Keyed by the suffix Firefox appends to a colour code, because that is
-     * the form both consumers below need: the entry published on the root is
-     * `--tab-group-<code><suffix>`, and the property set on the element is
-     * whatever RESOLVED_BY_SUFFIX names for the same suffix.
+     * One group colour, written out as every property Firefox paints a group
+     * from. These are set on the element itself, where they beat whatever the
+     * `color` setter resolved from the palette, so the strip shows this mod's
+     * exact shade rather than the swatch the group is filed under.
      *
-     * The three Nova suffixes are not decoration. Firefox 157 turned the
+     * The last four are not decoration. Firefox 157 turned the
      * `browser.nova.enabled` design refresh on by default, and its group rules
      * read a second, parallel set of names:
      *     .tab-group-label { color: var(--tab-group-text-color);
@@ -1156,75 +1155,162 @@ Output:`;
      * --tab-group-text-color, which did not. Unset is not a colour, so the
      * letter fell back to the ordinary tab text colour on a saturated fill.
      */
-    const groupColorPalette = (color) => ({
-        '': color,
-        '-invert': color,
-        '-pale': `color-mix(in srgb, ${color} 35%, white)`,
+    const groupColorProperties = (color) => ({
+        '--tab-group-color': color,
+        '--tab-group-color-invert': color,
+        '--tab-group-color-pale': `color-mix(in srgb, ${color} 35%, white)`,
+        // Nova's parallel set. --tab-group-background-color is the fill under
+        // the new name; the old one above is kept for pre-Nova builds.
+        '--tab-group-background-color': color,
         // One step stronger than the fill, the way Nova's own hover entries
         // are: darker against a light theme, lighter against a dark one.
-        '-hover': `light-dark(color-mix(in srgb, ${color} 85%, black),` +
-                  ` color-mix(in srgb, ${color} 85%, white))`,
+        '--tab-group-background-color-hover':
+            `light-dark(color-mix(in srgb, ${color} 85%, black),` +
+            ` color-mix(in srgb, ${color} 85%, white))`,
         // Text ON the group's colour. These are mid-saturation colours chosen
         // for a dark UI, and Nova's own entries are white over the same kind
         // of fill in both themes, so a near-white carrying a trace of the hue
         // is readable either way without a second value.
-        '-text': `color-mix(in srgb, ${color} 10%, white)`,
-        '-text-invert': `color-mix(in srgb, ${color} 10%, white)`,
+        '--tab-group-text-color': `color-mix(in srgb, ${color} 10%, white)`,
+        '--tab-group-text-color-invert': `color-mix(in srgb, ${color} 10%, white)`,
     });
 
-    // The property each palette suffix resolves to on the group element. Two
-    // for the bare entry: Nova renamed the fill and kept the old name working.
-    const RESOLVED_BY_SUFFIX = {
-        '': ['--tab-group-color', '--tab-group-background-color'],
-        '-invert': ['--tab-group-color-invert'],
-        '-pale': ['--tab-group-color-pale'],
-        '-hover': ['--tab-group-background-color-hover'],
-        '-text': ['--tab-group-text-color'],
-        '-text-invert': ['--tab-group-text-color-invert'],
-    };
-
-    // --- Firefox's own colour indirection, filled in for this mod's palette ---
-    // Nothing outside the tab strip reads a group's colour off the element.
-    // Every menu re-derives it from the CODE, and puts the same var() chain on
-    // a node of its own:
+    // --- The swatch a group is filed under ---
+    // Firefox's own nine codes, in the order its editor lays them out
+    // (MozTabbrowserTabGroupMenu.COLORS).
+    //
+    // The code is not bookkeeping. Nothing Firefox draws for a group outside
+    // the tab strip reads the colour off the element; it all re-derives it
+    // from the code, on a node of its own:
     //
     //   tab-context-menu.js  item.style.setProperty("--tab-group-color",
     //                            `var(--tab-group-${group.color})`)
     //   tab-groups-list.mjs  the same four properties on its row
+    //   tabgroup-menu.js     node.checked = node.value == group.color
     //
-    // then paints the group chicklet with it. This mod's code is the sentinel
-    // `<id>-favicon`, which names no palette entry, so on those nodes the chain
-    // resolved to nothing and the chicklet came out unpainted — in the tab
-    // context menu's "Move tab to group", and in the tab-groups list.
+    // Earlier versions wrote the sentinel `<id>-favicon` here, on the grounds
+    // that no palette entry could ever be called that. It cost all three: the
+    // group chicklet came out unpainted in "Move tab to group" and in the
+    // tab-groups list, and the editor showed nine swatches with none selected.
     //
-    // Publishing the entry under exactly that name on the root settles all of
-    // them at once, and without this mod having to know which menus exist:
-    // anything Firefox builds out of `--tab-group-${code}` now resolves. The
-    // resolved properties below stay too — they are what the element itself
-    // uses, and they are what keeps a group painted on a build whose palette
-    // suffixes differ from the ones named above.
-    const groupColorCode = (groupId) => `${groupId}-favicon`;
-    const publishedColorIds = new Set();
+    // So the closest of the nine is written instead. None of this mod's
+    // colours IS one of them — that is the point of having its own palette —
+    // but a group can still be FILED under one, which is all the code is for.
+    // The strip keeps the exact shade, painted over the top by the properties
+    // above; everywhere Firefox asks the code instead, the group answers with
+    // the nearest real colour rather than with nothing.
+    const FIREFOX_GROUP_COLORS = [
+        'blue', 'purple', 'cyan', 'orange', 'yellow', 'pink', 'green', 'gray', 'red',
+    ];
 
-    const publishGroupPalette = (groupId, color) => {
-        const code = groupColorCode(groupId);
-        const root = document.documentElement.style;
-        for (const [suffix, value] of Object.entries(groupColorPalette(color))) {
-            root.setProperty(`--tab-group-${code}${suffix}`, value);
+    // Read off the running browser rather than hard-coded. Nova resolves every
+    // swatch through light-dark(), so what the nine actually look like depends
+    // on the theme, and the one to pick is the circle that looks closest in
+    // the editor the user is about to open — not the one that looked closest
+    // on the build this was written against.
+    let swatchPalette = null;
+    const forgetSwatchPalette = () => { swatchPalette = null; };
+
+    // A colour no palette uses, handed to var() as its fallback so that an
+    // entry which does not exist is told apart from one that resolves. Without
+    // it an unresolved var() leaves `color` to inherit, and the inherited text
+    // colour would be read back as though it were the swatch.
+    const UNRESOLVED = 'rgb(1, 2, 3)';
+
+    const parseCssColor = (text) => {
+        if (!text) return null;
+        let m = /^#([0-9a-f]{3,8})$/i.exec(text.trim());
+        if (m) {
+            const hex = m[1].length <= 4
+                ? [...m[1]].map(c => c + c).join('')
+                : m[1];
+            return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
         }
-        publishedColorIds.add(groupId);
+        m = /^rgba?\(([^)]+)\)/i.exec(text);
+        if (m) return m[1].trim().split(/[\s,/]+/).slice(0, 3).map(v => Number(v) / 255);
+        // getComputedStyle answers in color(srgb …) once a value has been
+        // through color-mix(), which a theme's own palette may well have.
+        m = /^color\(srgb\s+([^)]+)\)/i.exec(text);
+        if (m) return m[1].trim().split(/[\s/]+/).slice(0, 3).map(Number);
+        return null;
     };
 
-    const retireGroupPalette = (groupId) => {
-        const code = groupColorCode(groupId);
-        const root = document.documentElement.style;
-        for (const suffix of Object.keys(RESOLVED_BY_SUFFIX)) {
-            root.removeProperty(`--tab-group-${code}${suffix}`);
-        }
-        publishedColorIds.delete(groupId);
+    /** sRGB 0..1 to OKLCh, for comparing colours the way an eye sorts them. */
+    const srgbToOklch = (rgb) => {
+        if (!rgb || rgb.some(v => !Number.isFinite(v))) return null;
+        const linear = (v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        const [r, g, b] = rgb.map(linear);
+        const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+        const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+        const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+        const a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+        const bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+        return {
+            L: 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+            C: Math.hypot(a, bb),
+            h: Math.atan2(bb, a),
+        };
     };
 
-    onCleanup(() => [...publishedColorIds].forEach(retireGroupPalette));
+    const readSwatchPalette = () => {
+        if (swatchPalette) return swatchPalette;
+        const palette = new Map();
+        let probe = null;
+        try {
+            // A var() only resolves on an element that is in the document, so
+            // the probe has to be inserted. It goes on the root, not in the
+            // tab strip, where both Firefox and this mod watch the child list;
+            // display:none keeps it out of layout, and computed style — which
+            // is what substitutes the var() — is available regardless.
+            probe = document.createXULElement('box');
+            probe.style.display = 'none';
+            document.documentElement.appendChild(probe);
+            for (const code of FIREFOX_GROUP_COLORS) {
+                probe.style.color = `var(--tab-group-${code}, ${UNRESOLVED})`;
+                const resolved = window.getComputedStyle(probe).color;
+                if (parseCssColor(resolved)?.join() === parseCssColor(UNRESOLVED).join()) continue;
+                const swatch = srgbToOklch(parseCssColor(resolved));
+                if (swatch) palette.set(code, swatch);
+            }
+        } catch (e) {
+            console.warn('[ZenTabsOrganiser] Could not read the group swatches:', e);
+        } finally {
+            probe?.remove();
+        }
+        swatchPalette = palette;
+        return palette;
+    };
+
+    // Under this chroma a colour has no hue worth matching, and belongs to the
+    // one swatch that is not a hue.
+    const GRAY_CHROMA = 0.04;
+
+    /** The code of the swatch that looks closest to `color`. */
+    const nearestSwatchCode = (color) => {
+        const palette = readSwatchPalette();
+        const target = srgbToOklch(parseCssColor(color));
+        // Nothing resolved, or nothing to compare: gray is a real code, so the
+        // editor still shows a selection and the menus still paint a chicklet.
+        if (!target || !palette.size) return 'gray';
+        // Hue alone, deliberately. This picks a NAME out of nine, not a shade.
+        // Nova's dark-theme swatches are far lighter than this mod's colours,
+        // so a full OKLab distance would be led by lightness and would answer
+        // "gray" for most of the palette. Chroma decides gray instead, which
+        // is the question lightness cannot answer and hue cannot either.
+        if (target.C < GRAY_CHROMA) return palette.has('gray') ? 'gray' : FIREFOX_GROUP_COLORS[0];
+        let best = null;
+        let bestDistance = Infinity;
+        for (const [code, swatch] of palette) {
+            if (swatch.C < GRAY_CHROMA) continue;
+            let distance = Math.abs(target.h - swatch.h);
+            if (distance > Math.PI) distance = 2 * Math.PI - distance;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = code;
+            }
+        }
+        return best ?? 'gray';
+    };
 
     /**
      * Paint one group. Idempotent, so re-running it causes no visible change.
@@ -1240,27 +1326,29 @@ Output:`;
      * properties win over whatever the setter wrote, and no name has to match.
      */
     const applyGroupColor = (groupEl, color) => {
-        // Before the early return, not after: the element can already carry
-        // the resolved properties from a previous load while the root entries
-        // were dropped by the teardown in between — Sine re-injects this file
-        // into a live window — and then nothing would ever put them back.
-        publishGroupPalette(groupEl.id, color);
-
-        if (groupEl.style.getPropertyValue('--tab-group-color') === color) return false;
+        const code = nearestSwatchCode(color);
+        // The code is part of what this call is for, so a group already
+        // carrying the right shade under the wrong code is not up to date.
+        // That is also the upgrade path off the old sentinel: a group painted
+        // by an earlier version carries `zen-tidy-color="true"`, which no code
+        // equals, so the first pass after the update refiles it.
+        if (groupEl.style.getPropertyValue('--tab-group-color') === color &&
+            groupEl.getAttribute('zen-tidy-color') === code) return false;
 
         // Still go through the setter so Firefox keeps its own bookkeeping and
         // the choice survives in the session store. The flag is what tells the
         // TabGroupUpdate listener below that this write is ours, not the
         // user's.
         applyingColor = true;
-        try { groupEl.color = groupColorCode(groupEl.id); } catch {}
+        try { groupEl.color = code; } catch {}
         finally { applyingColor = false; }
 
-        groupEl.setAttribute('zen-tidy-color', 'true');
-        for (const [suffix, value] of Object.entries(groupColorPalette(color))) {
-            for (const property of RESOLVED_BY_SUFFIX[suffix]) {
-                groupEl.style.setProperty(property, value);
-            }
+        // The code this group is filed under, kept where the listener below
+        // can read it back. `true` would not do: that listener's whole job is
+        // to tell the code this mod wrote from the one a user picked.
+        groupEl.setAttribute('zen-tidy-color', code);
+        for (const [property, value] of Object.entries(groupColorProperties(color))) {
+            groupEl.style.setProperty(property, value);
         }
         return true;
     };
@@ -1272,9 +1360,7 @@ Output:`;
     // this the user's pick would appear to do nothing at all. Zen routes the
     // same right-click to its folder menu, which has no colour picker, so this
     // simply never fires there.
-    const FIREFOX_GROUP_COLORS = new Set([
-        'blue', 'purple', 'cyan', 'orange', 'yellow', 'pink', 'green', 'red', 'gray',
-    ]);
+    //
     // Written into the saved-colour map so the hand-over outlives a restart;
     // a DOM attribute alone would be forgotten with the element.
     const USER_COLOR = 'user';
@@ -1289,12 +1375,6 @@ Output:`;
         // would leave --tab-group-color undefined, which is not "the user's
         // colour" — it is no colour at all, and both Firefox's own label and
         // this mod's --zto-* tints would fall back to grey.
-        //
-        // The root palette entry is a different matter and does go: the group
-        // now carries one of Firefox's own nine codes, so nothing resolves
-        // `--tab-group-<id>-favicon` any more and leaving it would only keep a
-        // dead colour alive in the menus.
-        retireGroupPalette(groupEl.id);
         const saved = readSavedColors();
         saved[groupEl.id] = USER_COLOR;
         writeSavedColors(saved);
@@ -1310,10 +1390,20 @@ Output:`;
             // Only groups this mod has actually painted: one it has never
             // touched was never its business, and a group still being built by
             // addTabGroup() has not been painted yet.
-            if (!group?.hasAttribute('zen-tidy-color')) return;
-            // The sentinel this mod writes (`<id>-favicon`) is never a palette
-            // name, so only a real user choice gets through here.
-            if (!FIREFOX_GROUP_COLORS.has(group.color)) return;
+            const ours = group?.getAttribute('zen-tidy-color');
+            if (!ours) return;
+            // The code this mod last filed the group under, against the code
+            // it has now. This has to be a comparison and not "is that a
+            // palette name": the code this mod writes IS one, and tabgroup.mjs
+            // dispatches this same event from `set label` as well as from
+            // `set color`, so anything weaker would read a rename as a
+            // recolour and hand the group over for being renamed.
+            if (group.color === ours) return;
+            // And it does have to be a real colour. On a window upgraded in
+            // place, `ours` is still the old sentinel until the first pass
+            // refiles the group, and the code beside it is the matching
+            // sentinel — a difference, but not a choice anyone made.
+            if (!FIREFOX_GROUP_COLORS.includes(group.color)) return;
             releaseGroupColor(group);
         };
         container.addEventListener('TabGroupUpdate', onUpdate);
@@ -1327,6 +1417,10 @@ Output:`;
      */
     function autoAssignColors(groupElementsMap) {
         if (!autoColors()) return;
+        // Once per pass. The swatches move with the theme, and a pass is both
+        // rare enough that nine style resolutions cost nothing and the only
+        // moment the answer is about to be used.
+        forgetSwatchPalette();
 
         const saved = readSavedColors();
         const live = [...groupElementsMap.values()].filter(el => el?.isConnected && el.id);
@@ -1359,20 +1453,12 @@ Output:`;
 
         // Rewriting from live groups only also prunes ids that no longer exist.
         writeSavedColors(nextColorMap);
-
-        // The root palette is pruned on the same basis. A stale entry costs
-        // nothing on its own — it is a custom property nothing names — but
-        // this is the one pass that already knows which groups are still here,
-        // so it is the one place that can tell.
-        const liveIds = new Set(live.map(el => el.id));
-        for (const groupId of [...publishedColorIds]) {
-            if (!liveIds.has(groupId)) retireGroupPalette(groupId);
-        }
     }
 
     /** Re-apply saved colours at startup, before any sort has run. */
     function restoreColors() {
         if (!autoColors()) return;
+        forgetSwatchPalette();
         let restored = 0;
         for (const [groupId, color] of Object.entries(readSavedColors())) {
             if (color === USER_COLOR) {
