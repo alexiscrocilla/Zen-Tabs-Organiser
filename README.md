@@ -18,7 +18,7 @@ Runs on **Zen Browser** and on **Firefox** with vertical tabs.
 - **Quick cleanup** of loose tabs with the **Clear** button
 
 ## Requirements
-- [Zen Browser](https://zen-browser.app/) 1.21+, or [Firefox](https://www.mozilla.org/firefox/) with tab groups and vertical tabs — written against the sources of **Firefox 155.0.1 and 156** and **Zen 1.22**. Older Firefox releases are expected to work, but some group icons resolve to chrome paths that only exist in recent builds and fall back to a generic folder icon.
+- [Zen Browser](https://zen-browser.app/) 1.21+, or [Firefox](https://www.mozilla.org/firefox/) with tab groups and vertical tabs — written against the sources of **Firefox 155.0.1, 156 and 157** and **Zen 1.22**. Older Firefox releases are expected to work, but some group icons resolve to chrome paths that only exist in recent builds and fall back to a generic folder icon.
 - [Sine](https://github.com/CosmoCreeper/Sine), the community mod manager for Zen and Firefox-based browsers
 
 > [!NOTE]
@@ -30,6 +30,15 @@ Turn on vertical tabs first — right-click the tab strip and choose *Turn on Ve
 The **expanded vertical sidebar** is the layout this mod is designed for, and the only one where it restyles groups. In a horizontal strip or a collapsed sidebar it leaves the browser's own tab-group appearance alone rather than half-replacing it.
 
 The **Sort** and **Clear** buttons belong to the expanded sidebar and are not shown in a collapsed rail — that column is Firefox's own and this mod adds nothing to it. A collapsed group still reads as one there: Firefox draws its label as a solid chip in the group's colour, which this mod flattens only in the expanded view, where the header band already says the same thing.
+
+#### Firefox 157 and the Nova redesign
+Firefox 157 is the first release with the **Nova** design refresh on by default, and it moves two things this mod reads.
+
+A tab is now a pill, drawn with a corner radius far larger than the tab itself; CSS only shrinks a radius that overflows, and it does so per box, so copying that one number onto a group gave its header a quarter-circle and the slab under it a bubble. The group's corners are capped at half a tab row instead — the arc a pill tab actually ends up with — so a group keeps a tab's silhouette whatever a tab's radius is set to. The header and its tabs also meet now rather than sitting either side of a seam, and a closed group is a pill on all four corners rather than only the top two.
+
+Nova also reads a second set of colour names beside the old ones, and re-derives a group's colour from its *code* everywhere outside the tab strip. This mod publishes both, under the code it gives a group, so the collapsed rail's chip and the group chicklet in **Move tab to group** and in the tab-groups list are painted in the group's colour instead of coming out blank.
+
+One thing stays as it is. Right-clicking a group opens Firefox's own editor, and its nine colour swatches show none selected: this mod's colours are its own, not Firefox's nine, so there is no swatch to select. Picking one there is still how you hand a group's colour back, and the mod stops recolouring it from then on.
 
 What differs between the two browsers:
 
@@ -189,6 +198,8 @@ Rules of thumb learned the hard way, all worth keeping:
 - **Check which field the host actually reads before trusting the one you bump.** Five releases shipped with a version number that climbed and an `updatedAt` that did not, and Sine compares only the second. The version was doing nothing but decorating the settings panel. Read the host's source for the comparison it really makes.
 - **Removing a field to trigger a fallback buys the fallback's failure modes too.** Dropping `updatedAt` so Sine would read the repository's push time did fix the comparison, and it also made every install depend on `api.github.com` answering — where an unreachable API is a silent `TypeError`, not a graceful skip. Check the paths that read the field, not just the one that compares it.
 - **When every binding is on one element, widen that element rather than intercept each event.** Firefox puts a group header's click, contextmenu and dragstart on `.tab-group-label` and on nothing else, so a header painted across the whole row answered on the label's box alone — toggle, context menu and drag all stopped at the edge of the text. A click can be picked up from the container in script; a dragstart cannot be forwarded anywhere useful. Stretching the label to be the band fixes all three at once and leaves every handler Firefox owns in place. Script is then needed only for the icon, which is a sibling of the label and outside all of them.
+- **A measured radius is a number, not a shape.** The script reads a tab's corner radius and the group reuses it, which held until Firefox 157 made a tab a pill by giving it a radius far bigger than the tab. CSS shrinks an overflowing radius per box, so the same number drew 16px on a tab, 32px on a header of identical height, and a 90px sweep on the slab under it. Measure the value, then cap it at something the shape itself defines — here half a tab row, which is what a pill tab resolves to anyway.
+- **A two-arm rule needs its second arm everywhere it competes.** The header rules carry a Zen arm and a Firefox arm, and the Firefox one is anchored on `#tabbrowser-tabs[orient][expanded]` — an id. Any single-arm rule meant to override it loses on Firefox and wins on Zen, which is exactly how a closed group ended up a pill on Zen and square-bottomed on Firefox for several releases. When a rule overrides one of those, give it both arms too.
 - **`flex-grow` never beats an auto margin, and a rule never beats a more specific one — compute both.** Stretching the group label across its band failed silently twice over: an earlier `margin-inline-end: auto` on the same element absorbed the free space before `flex: 1 1 auto` could distribute any, and the new rule was anchored on `#tabbrowser-tabs[expanded]` where the old one had `[orient="vertical"][expanded]`, so it lost the cascade at (1,5,1) against (1,6,1). Neither is visible by reading; the checks now compute which declaration actually wins for every property the hit target depends on, and the specificity function self-checks against five hand-computed selectors before it is trusted.
 
 ## Contributing

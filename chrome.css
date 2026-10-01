@@ -1,5 +1,6 @@
 /* ==== Zen Tabs Organiser — Sine mod for Zen 1.21+ and Firefox 140+ ==== */
-/* Written against Firefox 156 and Zen 1.22 (Firefox 155). */
+/* Written against Firefox 157 — the first release with the Nova design
+   refresh on by default — and Zen 1.22 (Firefox 155). */
 /* Declared as `style.chrome` in theme.json; Sine @imports it into its
    sine-mods/chrome.css bundle and loads it as a user sheet. */
 
@@ -166,8 +167,25 @@ tab-group:not([split-view-group]) {
      theme need not route its radius through --tab-border-radius: Nebula
      paints .tab-background directly with a variable of its own. The rest of
      the chain is what to use before the script has run, or if it cannot find
-     a tab to measure. */
-  --zto-radius: var(--zto-tab-radius, var(--tab-border-radius, var(--border-radius-medium, 6px)));
+     a tab to measure.
+
+     Capped at half a tab row, and that cap is not cosmetic. Firefox 157's
+     Nova design makes a tab a pill:
+       --tab-border-radius: var(--toolbarbutton-border-radius)
+     which resolves to a circle radius — a number far larger than the box.
+     CSS scales radii down only when they OVERFLOW their box, and it does
+     that per box, so the same number lands differently on every shape it is
+     copied onto. On a 32px tab row it comes out at 16px, a pill. On a group
+     header of the same height it comes out at 32px, a quarter-circle eating
+     the whole band. On the body slab under it — one box, as many rows tall
+     as the group has tabs — the bottom corners came out at about 90px, a
+     sweep that read as a bubble rather than as a group. Half a tab row is
+     the value a pill tab actually ends up with, so the cap gives the group's
+     corners the arc a tab has instead of the number a tab was given. A theme
+     with ordinary corners is under the cap and passes through untouched. */
+  --zto-radius: min(
+    var(--zto-tab-radius, var(--tab-border-radius, var(--border-radius-medium, 6px))),
+    calc(var(--tab-min-height, 32px) / 2));
 }
 
 /* --- Header ---
@@ -294,8 +312,19 @@ tab-group:not([split-view-group]) > .tab-group-container {
   animation: zenGroupAppear var(--zto-enter) var(--zto-ease-out) 60ms backwards;
 }
 
-/* Closed: the header becomes a standalone pill. */
-tab-group:not([split-view-group])[collapsed] > .tab-group-label-container {
+/* Closed: the header becomes a standalone pill.
+
+   Two arms, matching the header rule above, and for the same reason it has
+   two — but here the second one is what makes the rule work at all. The
+   header rule's Firefox arm is gated on `#tabbrowser-tabs[orient][expanded]`,
+   which carries an id, so it outranks a one-arm version of this rule and the
+   closed header kept `radius radius 0 0`: rounded on top, square underneath,
+   with nothing below it to meet. On Zen the header rule's arm is the plain
+   one, this rule came later in the file, and order settled it — which is why
+   the square bottom only ever showed on Firefox. */
+tab-group:not([split-view-group]):has(> .tab-group-container)[collapsed] > .tab-group-label-container,
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container))[collapsed] > .tab-group-label-container {
   border-radius: var(--zto-radius) !important;
 }
 
@@ -489,6 +518,16 @@ tab-group:not([split-view-group]) > .tab-group-line {
      have to stretch or the band keeps a dead strip above and below the text.
      Measured on a real header at 3.8.6: a 32px band around a 16px label. */
   align-self: stretch !important;
+  /* `align-self: stretch` only has an effect while the cross size is auto, and
+     Nova gives this wrapper one:
+       @media -moz-pref("browser.nova.enabled") {
+         #tabbrowser-tabs[orient="vertical"] & { block-size: var(--tab-group-label-container-size) }
+       }
+     That happens to be --tab-min-height, the same height the header is given
+     above, so today the two agree and nothing moves. Cleared anyway, because
+     the agreement is a coincidence of two separate rules and the stretch is
+     the thing this block actually means. */
+  block-size: auto !important;
   min-width: 0 !important;
   margin-block: 0 !important;
   margin-inline: 0 !important;
@@ -587,6 +626,23 @@ tab-group:not([split-view-group]) > .tab-group-line {
   margin-block:
     calc(var(--tab-margin-block, 0px) + var(--tab-padding-block-start, 0px))
     calc(var(--tab-margin-block, 0px) + var(--tab-padding-block-end, 0px)) !important;
+}
+
+/* …except underneath an OPEN group, where the next row is the group's own
+   first tab and the space is not a gap between neighbours but a seam across
+   the middle of one shape. The header paints the top of the slab and the tab
+   rows paint the rest of it, so a few pixels of sidebar between them cut the
+   group in two — a band floating above a block, which is exactly what the
+   corners are rounded to avoid.
+
+   Nothing is lost by dropping it. The space above the header is still
+   reserved by margin-block-start, and the first tab already carries
+   --tab-padding-block-start INSIDE its own tint, so the title does not end up
+   sitting on the favicon below it. The rhythm Firefox asks for is between
+   rows that belong to different things; these two belong to the same one. */
+#tabbrowser-tabs[orient="vertical"][expanded]
+  tab-group:not([split-view-group]):not(:has(> .tab-group-container)):not([collapsed]) > .tab-group-label-container {
+  margin-block-end: 0 !important;
 }
 
 /* --- Firefox's own group line ---
